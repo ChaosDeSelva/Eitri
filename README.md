@@ -1,87 +1,164 @@
-# Eitri
+<h1 align="center">Eitri</h1>
+<p align="center">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue?style=flat-square" />
+  <img alt="Built with Tauri" src="https://img.shields.io/badge/built%20with-Tauri%202-24c8db?style=flat-square" />
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
+  <img alt="Bring your own key" src="https://img.shields.io/badge/keys-bring%20your%20own-orange?style=flat-square" />
+</p>
 
-**Plan, generate and review whole sets of AI images with your own OpenAI key.**
+<h3 align="center">Forge whole image sets from one idea.</h3>
 
-Eitri is a desktop app for making many images that belong together: an icon set, a cast of
-character portraits, a deck of cards, a batch of product shots. Describe the idea, and Eitri writes
-a plan with one shared style and a distinct prompt for every image. Preview a few, lock the style,
-then let it draw the rest while you watch, pause, and redo anything with a note.
+<p align="center">
+  <img alt="Eitri: forge whole image sets from one idea" src="assets/banner.png" width="100%" />
+</p>
 
-<!-- Screenshots: docs/screenshots/*.png -->
+## What it is
 
-## Why
+Making one AI image is easy. Making three hundred that look like they belong to the same game is
+not. You end up in a chat window, pasting prompts one at a time, downloading files by hand,
+squinting at which ones came back with a white background, and losing track of what is done.
 
-Generating one image is easy. Generating three hundred that look like the same game is not. The
-hard parts are everything around the API call, and Eitri does them for you:
+Eitri is a desktop app that does the whole loop for you. Describe the idea, and it writes a plan:
+one shared style and a distinct description for every image. Preview a few, approve the look, then
+press Run and watch the grid fill in. Images that come back broken get caught by pixel checks and
+retried. Anything you do not like gets a note and a redo. When you are happy, export the set
+straight into your project's art folder.
 
-- **One style across the whole set.** Each plan has a shared prompt every image ends with, and
-  approved images become *style references* that new images are drawn to match.
-- **Live progress.** Every image shows as queued, drawing, done, needs review or failed, with
-  its cost. Pause, resume or stop at any time; images already being drawn are kept.
-- **A budget you set.** Each project has a dollar cap. The run stops when it is reached.
-- **Automatic checks for transparent art.** Eitri checks each image's pixels: solid backgrounds,
-  see-through holes inside the subject, a subject sitting too small in the frame. A failed image
-  gets one automatic second try, then waits for you.
-- **Redo with feedback.** Write what to change and Eitri edits that image, or redraws it fresh.
-- **Safe to stop.** Quota, billing and key errors stop the run at once with nothing lost; the
-  next run picks up exactly where it stopped. Quitting mid-run is fine too.
-- **Export for real projects.** Square PNG masters at any size, WebP copies, your own file
-  name pattern, written atomically into your game's or site's art folder.
+It runs on your machine with your own API keys. There is no server, no account and no telemetry.
 
-## Bring your own key
+## Features
 
-Eitri has no server and no account. You paste an OpenAI API key once:
+- **Idea to plan** - a planning model writes a style brief, a shared prompt every image ends with, and one specific description per image, streamed in as it is written. Edit anything before you spend a cent.
+- **Import your own list** - bring a CSV or JSON of prompts instead (any file with a `prompt`, `subject` or `description` column), or re-use a plan exported from another project.
+- **Preview, then lock** - draw a few, approve the style, then freeze the spec. Every image records a hash of the exact prompt it will send, so nothing drifts mid-run.
+- **One style across hundreds of images** - approved images become style references, rotated across the set so a big batch stays consistent without collapsing onto one look.
+- **Live batch runs** - a worker pool draws several images at once. Pause, resume, stop, or change how many draw at a time. Every image shows queued, drawing, done, needs review or failed, with its cost.
+- **A budget you set** - each project has a dollar cap and the run stops when it is reached. Spend is shown per image, per project, today and all time.
+- **Pixel checks for transparent art** - solid backgrounds, see-through holes sealed inside the subject, a subject sitting too small in the frame. A failed image gets one automatic second try, then waits for you.
+- **Transparency on any provider** - providers without real alpha draw on a flat chroma backdrop that Eitri keys out, with edge softening and spill removal.
+- **Redo with feedback** - write what to change. Eitri edits that exact image when the model supports edits, or redraws it with your note.
+- **Keyboard review** - step through results with `A` approve, `R` reject, `F` feedback, arrows to move. Compare every attempt side by side.
+- **Export for real projects** - square PNG masters at any size, WebP copies, your own file name pattern, written atomically into the folder your game or site loads from.
+- **Safe to stop** - expired keys, quota and billing errors stop the run at once with the image put back in the queue, never retried in a loop. Quit mid-run and the next run resumes exactly there.
+- **Desktop notifications** - a long batch can run in the background and tell you when it finishes or stops.
 
-- It is checked against OpenAI, then stored in your operating system's credential store
-  (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux).
-- It is never written to Eitri's database or log files, and never sent anywhere but OpenAI.
-- The interface only ever learns whether a key exists and its last four characters.
+## Providers
 
-You pay OpenAI directly for what you generate. Eitri shows the cost of every image from the token
-usage OpenAI reports; your OpenAI dashboard is the bill of record.
+| Provider | Image models | Style references | Edits | Native transparency | Plans |
+| --- | --- | --- | --- | --- | --- |
+| **OpenAI** (reference) | GPT Image 1.5, 1, 1 mini | Yes | Yes | Yes | Yes |
+| **Google Gemini** | Gemini 2.5 Flash Image, Imagen 4 (+ Ultra, Fast) | Gemini models | Gemini models | Keyed | Yes |
+| **fal.ai** | FLUX 1.1 pro, FLUX dev/schnell, FLUX Kontext, Recraft V3, any fal model id | Kontext | Kontext | Keyed | No |
+| **Replicate** | FLUX 1.1 pro, FLUX schnell, FLUX Kontext, Ideogram 3, Recraft V3, any official model | Kontext | Kontext | Keyed | No |
+| **Stability AI** | Stable Image Core, Ultra, SD 3.5 Large/Medium | No | No | Keyed | No |
+| **OpenAI-compatible** | anything behind `/images/generations` (local servers, gateways) | If supported | If supported | If supported | If supported |
 
-## Privacy
+OpenAI is the provider Eitri is used with day to day. The others are implemented from each
+provider's public API documentation; if one misbehaves, please [open a provider report](.github/ISSUE_TEMPLATE/provider.yml).
+Details and model notes live in [docs/providers.md](docs/providers.md).
 
-No telemetry, no analytics, no update checks. Projects, images and history live in your app-data
-folder (`~/Library/Application Support/dev.eitri.app` on macOS). The only network traffic is to the
-OpenAI API base URL set in Settings.
+## Quick Start
 
-## How it works
+### Requirements
 
-1. **Plan.** Describe the idea, the number of images, the canvas and whether the background is
-   transparent. Eitri's planning model writes a style brief, a shared prompt and one description per
-   image, streamed in as it is written. Edit anything.
-2. **Preview.** Draw two or more images. Approve the ones you like and mark them as style
-   references.
-3. **Approve the spec.** Prompts are frozen (each image records a hash of the exact prompt it will
-   send) so nothing changes silently mid-run.
-4. **Run.** Watch the grid fill in. Adjust how many images draw at once.
-5. **Review.** Step through results with the keyboard: `A` approve, `R` reject, `F` write a redo
-   note, arrows to move.
-6. **Export** approved images to your output folder.
+- An API key for at least one provider above.
+- macOS 12+, Windows 10+, or a recent Linux desktop with a Secret Service keyring.
+
+### Install
+
+Download a build from Releases, or build from source:
+
+```sh
+git clone <this repository>
+cd eitri
+pnpm install
+pnpm tauri build
+```
+
+The app bundle lands in `src-tauri/target/release/bundle/`.
+
+### First run
+
+1. Open **Settings**, pick a provider, paste your key. It is verified, then stored in your system keychain.
+2. Click **New project** and describe what you need, for example
+   `40 fantasy potion bottles for an inventory screen, chunky hand-painted style, transparent background`.
+3. Press **Draft plan** and watch it write. Edit anything.
+4. Select two images and press **Preview**. Approve the ones you like and mark them **Use as style reference**.
+5. Press **Approve spec**, then **Run**.
+6. Review, redo what needs it, then **Export** to your project's art folder.
+
+## How It Works
+
+```
+           you
+            │  idea, edits, approvals, notes
+            ▼
+ ┌──────────────────────┐      structured, streamed
+ │ Planner              │ ───────────────────────────►  OpenAI / Gemini
+ │ style brief          │
+ │ shared prompt        │
+ │ one subject per image│
+ └──────────┬───────────┘
+            │ approve spec (prompts frozen by hash)
+            ▼
+ ┌──────────────────────┐   draw / edit with references
+ │ Runner               │ ───────────────────────────►  OpenAI · Gemini · fal · Replicate · Stability · compatible
+ │ worker pool          │ ◄───────────────────────────
+ │ pause · stop · budget│
+ │ retries · limits     │
+ └──────────┬───────────┘
+            ▼
+ ┌──────────────────────┐   pass ──► done
+ │ Checks               │   look closer ──► needs review
+ │ keying · pixel gates │   fail ──► one automatic retry ──► needs review
+ └──────────┬───────────┘
+            ▼
+     Review (approve · reject · redo with note) ──► Export (PNG + WebP, atomic)
+```
+
+Everything is stored locally: projects, prompts, every attempt and its cost in SQLite, images on
+disk, and an append-only activity log per project. API keys never touch any of it; they live in
+the operating system's credential store and are read by the Rust backend at request time.
+
+The full design is in [docs/architecture.md](docs/architecture.md).
+
+## Privacy and keys
+
+- Keys are verified, then stored in Keychain (macOS), Credential Manager (Windows) or Secret Service (Linux).
+- Keys are never written to Eitri's database, logs or exports, and the interface only ever learns whether one exists and its last four characters. Error messages are redacted before they are stored or shown.
+- The interface itself cannot make network requests (strict content security policy). All provider traffic happens in the Rust backend, and only to the provider endpoints you use.
+- No telemetry, no analytics, no update checks. Your data lives in the app-data folder (`~/Library/Application Support/dev.eitri.app` on macOS).
+
+See [SECURITY.md](SECURITY.md) for the details and how to report a vulnerability.
+
+## Documentation
+
+| Doc | What it covers |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | Modules, data model, run lifecycle, failure handling |
+| [docs/providers.md](docs/providers.md) | Every provider: endpoints, models, capabilities, known gaps |
+| [docs/checks.md](docs/checks.md) | The pixel checks and background keying, with their thresholds |
+| [docs/spec-format.md](docs/spec-format.md) | The JSON spec and CSV import formats |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, tests, adding a provider |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## Development
 
-Requirements: Rust (stable), Node 22+, pnpm.
-
 ```sh
 pnpm install
-pnpm tauri dev               # run the app
-pnpm test                    # frontend unit tests
-cd src-tauri && cargo test   # Rust unit and integration tests (mock OpenAI server)
-pnpm tauri build             # release build
+pnpm tauri dev                 # run the app with hot reload
+pnpm test                      # frontend unit tests (vitest)
+pnpm build                     # type-check and build the interface
+cd src-tauri && cargo test     # Rust unit and integration tests (mock provider server)
 ```
 
-| Path | What |
-|---|---|
-| `src-tauri/src/openai.rs` | OpenAI client: generations, edits with references, streamed planning, error classes |
-| `src-tauri/src/runner.rs` | Worker pool: pause, resume, stop, budget, retries, limit handling |
-| `src-tauri/src/gates.rs` | Pixel checks for transparent art |
-| `src-tauri/src/planner.rs` | Idea to spec with structured output |
-| `src-tauri/src/store.rs` | SQLite store and append-only activity ledger |
-| `src-tauri/src/secrets.rs` | OS keychain access |
-| `src/` | Vue 3 + Tailwind interface |
+Stack: Tauri 2, Rust (tokio, reqwest, rusqlite, image), Vue 3, Pinia, Tailwind CSS 4.
+
+## Contributing
+
+Issues and pull requests are welcome. Provider reports are especially useful, since most providers
+are only exercised by the people who use them. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## License
 
-MIT
+[MIT](LICENSE)

@@ -13,7 +13,7 @@ const app = useAppStore()
 const router = useRouter()
 
 async function newProject() {
-  if (!app.key.has_key) {
+  if (!app.hasAnyKey) {
     router.push('/settings')
     return
   }
@@ -54,7 +54,7 @@ async function newProject() {
             </li>
           </ol>
           <div class="mt-6 flex gap-2">
-            <UiButton v-if="!app.key.has_key" variant="primary" icon="key" @click="router.push('/settings')">Add your API key</UiButton>
+            <UiButton v-if="!app.hasAnyKey" variant="primary" icon="key" @click="router.push('/settings')">Add your API key</UiButton>
             <UiButton v-else variant="primary" icon="plus" @click="newProject">Start a project</UiButton>
           </div>
         </div>

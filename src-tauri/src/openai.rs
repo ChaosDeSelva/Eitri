@@ -53,9 +53,17 @@ impl Usage {
     fn from_json(v: &Value) -> Usage {
         let u = &v["usage"];
         let input = u["input_tokens"].as_u64().unwrap_or(0);
-        let image = u["input_tokens_details"]["image_tokens"].as_u64().unwrap_or(0);
-        let text = u["input_tokens_details"]["text_tokens"].as_u64().unwrap_or(input.saturating_sub(image));
-        Usage { input_text: text, input_image: image, output: u["output_tokens"].as_u64().unwrap_or(0) }
+        let image = u["input_tokens_details"]["image_tokens"]
+            .as_u64()
+            .unwrap_or(0);
+        let text = u["input_tokens_details"]["text_tokens"]
+            .as_u64()
+            .unwrap_or(input.saturating_sub(image));
+        Usage {
+            input_text: text,
+            input_image: image,
+            output: u["output_tokens"].as_u64().unwrap_or(0),
+        }
     }
 }
 
@@ -88,7 +96,11 @@ impl OpenAi {
             .user_agent(concat!("eitri/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("http client");
-        OpenAi { http, base: base.trim_end_matches('/').to_string(), key }
+        OpenAi {
+            http,
+            base: base.trim_end_matches('/').to_string(),
+            key,
+        }
     }
 
     async fn send(&self, rb: reqwest::RequestBuilder) -> Result<Value, ApiError> {
@@ -106,10 +118,16 @@ impl OpenAi {
     }
 
     pub async fn list_models(&self) -> Result<Vec<String>, ApiError> {
-        let v = self.send(self.http.get(format!("{}/models", self.base))).await?;
+        let v = self
+            .send(self.http.get(format!("{}/models", self.base)))
+            .await?;
         let mut ids: Vec<String> = v["data"]
             .as_array()
-            .map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         ids.sort();
         Ok(ids)
@@ -121,13 +139,21 @@ impl OpenAi {
             "quality": req.quality, "background": req.background, "output_format": "png",
         });
         let v = self
-            .send(self.http.post(format!("{}/images/generations", self.base)).json(&body))
+            .send(
+                self.http
+                    .post(format!("{}/images/generations", self.base))
+                    .json(&body),
+            )
             .await?;
         decode_image(&v)
     }
 
     /// Image edit: `images` are reference or source PNGs (name, bytes).
-    pub async fn edit(&self, req: &ImageRequest, images: &[(String, Vec<u8>)]) -> Result<ImageResult, ApiError> {
+    pub async fn edit(
+        &self,
+        req: &ImageRequest,
+        images: &[(String, Vec<u8>)],
+    ) -> Result<ImageResult, ApiError> {
         let mut form = reqwest::multipart::Form::new()
             .text("model", req.model.clone())
             .text("prompt", req.prompt.clone())
@@ -143,7 +169,11 @@ impl OpenAi {
             form = form.part("image[]", part);
         }
         let v = self
-            .send(self.http.post(format!("{}/images/edits", self.base)).multipart(form))
+            .send(
+                self.http
+                    .post(format!("{}/images/edits", self.base))
+                    .multipart(form),
+            )
             .await?;
         decode_image(&v)
     }
@@ -165,13 +195,21 @@ impl OpenAi {
             ],
             "text": {"format": {"type": "json_schema", "name": schema_name, "schema": schema, "strict": true}}
         });
-        let v = self.send(self.http.post(format!("{}/responses", self.base)).json(&body)).await?;
+        let v = self
+            .send(
+                self.http
+                    .post(format!("{}/responses", self.base))
+                    .json(&body),
+            )
+            .await?;
         let text = v["output"]
             .as_array()
             .into_iter()
             .flatten()
             .flat_map(|o| o["content"].as_array().into_iter().flatten())
-            .find_map(|c| (c["type"] == "output_text").then(|| c["text"].as_str().unwrap_or("").to_string()))
+            .find_map(|c| {
+                (c["type"] == "output_text").then(|| c["text"].as_str().unwrap_or("").to_string())
+            })
             .ok_or_else(|| ApiError::Transient("the planner returned no text".into()))?;
         let parsed: Value = serde_json::from_str(&text)
             .map_err(|e| ApiError::Transient(format!("the planner returned invalid JSON: {e}")))?;
@@ -256,7 +294,9 @@ impl SseText {
         if data.is_empty() || data == "[DONE]" {
             return Ok(false);
         }
-        let Ok(v) = serde_json::from_str::<Value>(&data) else { return Ok(false) };
+        let Ok(v) = serde_json::from_str::<Value>(&data) else {
+            return Ok(false);
+        };
         match v["type"].as_str().unwrap_or("") {
             "response.output_text.delta" => {
                 self.text.push_str(v["delta"].as_str().unwrap_or(""));
@@ -267,10 +307,18 @@ impl SseText {
                 Ok(false)
             }
             "response.failed" | "response.incomplete" | "error" => {
-                let err = if v["error"].is_object() { v["error"].clone() } else { v["response"]["error"].clone() };
-                let reason = v["response"]["incomplete_details"]["reason"].as_str().unwrap_or("");
+                let err = if v["error"].is_object() {
+                    v["error"].clone()
+                } else {
+                    v["response"]["error"].clone()
+                };
+                let reason = v["response"]["incomplete_details"]["reason"]
+                    .as_str()
+                    .unwrap_or("");
                 if err.is_null() && !reason.is_empty() {
-                    return Err(ApiError::Transient(format!("the plan was cut short ({reason}); try fewer images")));
+                    return Err(ApiError::Transient(format!(
+                        "the plan was cut short ({reason}); try fewer images"
+                    )));
                 }
                 Err(classify(400, &json!({ "error": err })))
             }
@@ -286,22 +334,34 @@ fn decode_image(v: &Value) -> Result<ImageResult, ApiError> {
     let png = base64::engine::general_purpose::STANDARD
         .decode(b64)
         .map_err(|e| ApiError::Transient(format!("image was not valid base64: {e}")))?;
-    Ok(ImageResult { png, usage: Usage::from_json(v) })
+    Ok(ImageResult {
+        png,
+        usage: Usage::from_json(v),
+    })
 }
 
 pub fn classify(status: u16, body: &Value) -> ApiError {
     let err = &body["error"];
-    let code = err["code"].as_str().or_else(|| err["type"].as_str()).unwrap_or("");
+    let code = err["code"]
+        .as_str()
+        .or_else(|| err["type"].as_str())
+        .unwrap_or("");
     let message = crate::error::redact(err["message"].as_str().unwrap_or("no details"));
     let text = format!("{status} {code}: {message}");
     let lower = message.to_lowercase();
-    if code == "insufficient_quota" || code == "billing_hard_limit_reached" || lower.contains("billing") {
+    if code == "insufficient_quota"
+        || code == "billing_hard_limit_reached"
+        || lower.contains("billing")
+    {
         return ApiError::Quota(text);
     }
     match status {
         401 | 403 => ApiError::Auth(text),
         429 => ApiError::RateLimited(text),
-        400 if code == "moderation_blocked" || code == "content_policy_violation" || lower.contains("safety system") => {
+        400 if code == "moderation_blocked"
+            || code == "content_policy_violation"
+            || lower.contains("safety system") =>
+        {
             ApiError::Refused(text)
         }
         400..=499 => ApiError::BadRequest(text),
@@ -332,7 +392,9 @@ mod tests {
     fn sse_accumulates_deltas_and_usage() {
         let mut s = SseText::default();
         assert!(s.feed("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"a\\\":\"}\n\n").unwrap());
-        assert!(s.feed("data: {\"type\":\"response.output_text.delta\",\"delta\":\"1}\"}").unwrap());
+        assert!(s
+            .feed("data: {\"type\":\"response.output_text.delta\",\"delta\":\"1}\"}")
+            .unwrap());
         assert!(!s.feed("data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}}").unwrap());
         assert_eq!(s.text, "{\"a\":1}");
         assert_eq!(s.usage.output, 5);
@@ -344,6 +406,13 @@ mod tests {
     fn usage_splits_image_and_text_tokens() {
         let v = json!({"usage": {"input_tokens": 900, "output_tokens": 1393,
             "input_tokens_details": {"image_tokens": 400, "text_tokens": 500}}});
-        assert_eq!(Usage::from_json(&v), Usage { input_text: 500, input_image: 400, output: 1393 });
+        assert_eq!(
+            Usage::from_json(&v),
+            Usage {
+                input_text: 500,
+                input_image: 400,
+                output: 1393
+            }
+        );
     }
 }

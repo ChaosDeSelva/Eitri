@@ -106,27 +106,35 @@ pub fn user_message(req: &PlanRequest) -> String {
 }
 
 pub fn parse(v: Value) -> Result<Plan, ApiError> {
-    let plan: Plan = serde_json::from_value(v).map_err(|e| ApiError::Transient(format!("plan did not match the schema: {e}")))?;
+    let plan: Plan = serde_json::from_value(v)
+        .map_err(|e| ApiError::Transient(format!("plan did not match the schema: {e}")))?;
     if plan.items.is_empty() {
         return Err(ApiError::Transient("the plan had no items".into()));
     }
     Ok(plan)
 }
 
-pub async fn draft(client: &OpenAi, model: &str, req: &PlanRequest) -> Result<(Plan, Usage), ApiError> {
-    let (v, usage) = client.respond_json(model, SYSTEM, &user_message(req), "image_spec", &schema()).await?;
+pub async fn draft(
+    client: &OpenAi,
+    model: &str,
+    req: &PlanRequest,
+) -> Result<(Plan, Usage), ApiError> {
+    let (v, usage) = client
+        .respond_json(model, SYSTEM, &user_message(req), "image_spec", &schema())
+        .await?;
     Ok((parse(v)?, usage))
 }
 
-/// Streaming draft: `on_text` gets the partial JSON as it is written.
+/// Streaming draft through any planning-capable provider: `on_text` gets the partial JSON as
+/// it is written.
 pub async fn draft_streaming(
-    client: &OpenAi,
+    provider: &crate::providers::Provider,
     model: &str,
     req: &PlanRequest,
     on_text: &mut (dyn FnMut(&str) + Send),
 ) -> Result<(Plan, Usage), ApiError> {
-    let (v, usage) = client
-        .respond_json_stream(model, SYSTEM, &user_message(req), "image_spec", &schema(), on_text)
+    let (v, usage) = provider
+        .plan(model, SYSTEM, &user_message(req), &schema(), on_text)
         .await?;
     Ok((parse(v)?, usage))
 }
@@ -145,21 +153,30 @@ mod tests {
         });
         let p = parse(v).unwrap();
         assert_eq!(p.items[0].slug, "red-potion");
-        assert!(parse(json!({"name": "x", "style_brief": "", "shared_tail": "", "items": []})).is_err());
+        assert!(
+            parse(json!({"name": "x", "style_brief": "", "shared_tail": "", "items": []})).is_err()
+        );
     }
 
     #[test]
     fn schema_is_strict() {
         let s = schema();
         assert_eq!(s["additionalProperties"], false);
-        assert_eq!(s["properties"]["items"]["items"]["additionalProperties"], false);
+        assert_eq!(
+            s["properties"]["items"]["items"]["additionalProperties"],
+            false
+        );
     }
 
     #[test]
     fn user_message_clamps_count() {
         let m = user_message(&PlanRequest {
-            idea: "potions".into(), count: 9999, background: "transparent".into(),
-            gate: "figure".into(), size: "1024x1024".into(), notes: String::new(),
+            idea: "potions".into(),
+            count: 9999,
+            background: "transparent".into(),
+            gate: "figure".into(),
+            size: "1024x1024".into(),
+            notes: String::new(),
         });
         assert!(m.contains("Number of items: 500"));
         assert!(m.contains("transparent"));

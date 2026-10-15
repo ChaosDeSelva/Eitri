@@ -16,8 +16,8 @@ onMounted(() => app.start())
 const activeProject = computed(() => (route.params.id as string | undefined) ?? null)
 
 async function newProject() {
-  if (!app.key.has_key) {
-    app.notify('Add your OpenAI API key in Settings first.', 'bad')
+  if (!app.hasAnyKey) {
+    app.notify('Add an API key in Settings first.', 'bad')
     router.push('/settings')
     return
   }
@@ -60,7 +60,7 @@ function cycleTheme() {
           active-class="!bg-surface-3 !text-fg"
         >
           <Icon name="settings" /> Settings
-          <span v-if="!app.key.has_key" class="ml-auto size-2 rounded-full bg-accent" title="Add an API key" />
+          <span v-if="!app.hasAnyKey" class="ml-auto size-2 rounded-full bg-accent" title="Add an API key" />
         </RouterLink>
       </nav>
 
@@ -114,8 +114,8 @@ function cycleTheme() {
         </div>
         <div class="flex items-center justify-between">
           <RouterLink to="/settings">
-            <Pill :tone="app.key.has_key ? 'ok' : 'accent'" dot>
-              {{ app.key.has_key ? `Key ••••${app.key.last4}` : 'No API key' }}
+            <Pill :tone="app.hasAnyKey ? 'ok' : 'accent'" dot>
+              {{ app.hasAnyKey ? `${app.keyCount || 1} provider${app.keyCount > 1 ? 's' : ''} ready` : 'No API key' }}
             </Pill>
           </RouterLink>
           <button class="rounded p-1 text-muted hover:bg-surface-3 hover:text-fg" :title="`Theme: ${app.theme}`" @click="cycleTheme">

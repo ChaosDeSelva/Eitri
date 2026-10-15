@@ -12,7 +12,10 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 pub fn new_id() -> String {
@@ -25,7 +28,8 @@ pub fn sha256(s: &str) -> String {
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -115,7 +119,12 @@ CREATE TABLE events (
 );
 CREATE INDEX events_project ON events(project_id, id);
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-"#];
+"#,
+    r#"
+ALTER TABLE projects ADD COLUMN provider TEXT NOT NULL DEFAULT 'openai';
+ALTER TABLE projects ADD COLUMN text_provider TEXT NOT NULL DEFAULT 'openai';
+"#,
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
@@ -140,6 +149,10 @@ pub struct Project {
     pub spec_locked: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Image provider id (see `providers::Kind`).
+    pub provider: String,
+    /// Provider used for planning.
+    pub text_provider: String,
 }
 
 /// Fields the UI may change. `None` leaves a field as it is.
@@ -162,6 +175,8 @@ pub struct ProjectPatch {
     pub webp_sizes: Option<Vec<u32>>,
     pub filename_pattern: Option<String>,
     pub use_references: Option<bool>,
+    pub provider: Option<String>,
+    pub text_provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -287,7 +302,11 @@ fn item_from_row(r: &Row) -> rusqlite::Result<Item> {
     let reasons = gate
         .and_then(|g| serde_json::from_str::<Value>(&g).ok())
         .and_then(|g| g["reasons"].as_array().cloned())
-        .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| s.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     Ok(Item {
         id: r.get(0)?,
@@ -316,7 +335,7 @@ fn item_from_row(r: &Row) -> rusqlite::Result<Item> {
 
 const PROJECT_COLS: &str = "id, name, idea, style_brief, shared_tail, output_dir, image_model, text_model, quality, size, \
   background, gate, concurrency, budget_usd, export_sizes, webp_sizes, filename_pattern, use_references, spec_locked, \
-  created_at, updated_at";
+  created_at, updated_at, provider, text_provider";
 
 fn project_from_row(r: &Row) -> rusqlite::Result<Project> {
     let sizes = |s: String| serde_json::from_str::<Vec<u32>>(&s).unwrap_or_default();
@@ -342,6 +361,8 @@ fn project_from_row(r: &Row) -> rusqlite::Result<Project> {
         spec_locked: r.get::<_, i64>(18)? != 0,
         created_at: r.get(19)?,
         updated_at: r.get(20)?,
+        provider: r.get(21)?,
+        text_provider: r.get(22)?,
     })
 }
 
@@ -390,8 +411,14 @@ impl Store {
             conn.execute_batch(&format!("PRAGMA user_version = {}", i + 1))?;
         }
         // A crash or quit mid-draw leaves items marked drawing; their request is gone.
-        conn.execute("UPDATE items SET status = 'queued' WHERE status = 'drawing'", [])?;
-        Ok(Store { conn: Mutex::new(conn), data_dir })
+        conn.execute(
+            "UPDATE items SET status = 'queued' WHERE status = 'drawing'",
+            [],
+        )?;
+        Ok(Store {
+            conn: Mutex::new(conn),
+            data_dir,
+        })
     }
 
     fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -407,7 +434,9 @@ impl Store {
     pub fn setting(&self, key: &str) -> AppResult<Option<String>> {
         Ok(self
             .db()
-            .query_row("SELECT value FROM settings WHERE key = ?", [key], |r| r.get(0))
+            .query_row("SELECT value FROM settings WHERE key = ?", [key], |r| {
+                r.get(0)
+            })
             .optional()?)
     }
 
@@ -421,22 +450,61 @@ impl Store {
 
     // ---------- projects ----------
 
-    pub fn create_project(&self, name: &str, image_model: &str, text_model: &str, concurrency: i64, budget: f64) -> AppResult<Project> {
+    pub fn create_project(
+        &self,
+        name: &str,
+        image_model: &str,
+        text_model: &str,
+        concurrency: i64,
+        budget: f64,
+    ) -> AppResult<Project> {
+        self.create_project_with(
+            name,
+            "openai",
+            image_model,
+            "openai",
+            text_model,
+            concurrency,
+            budget,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_project_with(
+        &self,
+        name: &str,
+        provider: &str,
+        image_model: &str,
+        text_provider: &str,
+        text_model: &str,
+        concurrency: i64,
+        budget: f64,
+    ) -> AppResult<Project> {
         let id = new_id();
         let t = now_ms();
         self.db().execute(
-            "INSERT INTO projects(id, name, image_model, text_model, concurrency, budget_usd, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-            params![id, name.trim(), image_model, text_model, concurrency, budget, t],
+            "INSERT INTO projects(id, name, provider, image_model, text_provider, text_model, concurrency, budget_usd, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            params![id, name.trim(), provider, image_model, text_provider, text_model, concurrency, budget, t],
         )?;
         std::fs::create_dir_all(self.project_dir(&id))?;
-        self.event(Some(&id), None, "project", &format!("Created project {}", name.trim()), None)?;
+        self.event(
+            Some(&id),
+            None,
+            "project",
+            &format!("Created project {}", name.trim()),
+            None,
+        )?;
         self.project(&id)
     }
 
     pub fn project(&self, id: &str) -> AppResult<Project> {
         self.db()
-            .query_row(&format!("SELECT {PROJECT_COLS} FROM projects WHERE id = ?"), [id], project_from_row)
+            .query_row(
+                &format!("SELECT {PROJECT_COLS} FROM projects WHERE id = ?"),
+                [id],
+                project_from_row,
+            )
             .optional()?
             .ok_or_else(|| msg("Project not found."))
     }
@@ -444,7 +512,9 @@ impl Store {
     pub fn projects(&self) -> AppResult<Vec<ProjectSummary>> {
         let projects: Vec<Project> = {
             let db = self.db();
-            let mut st = db.prepare(&format!("SELECT {PROJECT_COLS} FROM projects ORDER BY updated_at DESC"))?;
+            let mut st = db.prepare(&format!(
+                "SELECT {PROJECT_COLS} FROM projects ORDER BY updated_at DESC"
+            ))?;
             let rows = st.query_map([], project_from_row)?;
             rows.collect::<Result<_, _>>()?
         };
@@ -453,7 +523,11 @@ impl Store {
             .map(|p| {
                 let stats = self.stats(&p.id)?;
                 let cover = self.cover(&p.id)?;
-                Ok(ProjectSummary { project: p, stats, cover })
+                Ok(ProjectSummary {
+                    project: p,
+                    stats,
+                    cover,
+                })
             })
             .collect()
     }
@@ -473,8 +547,11 @@ impl Store {
     pub fn stats(&self, project_id: &str) -> AppResult<ProjectStats> {
         let db = self.db();
         let mut s = ProjectStats::default();
-        let mut st = db.prepare("SELECT status, COUNT(*) FROM items WHERE project_id = ? GROUP BY status")?;
-        let rows = st.query_map([project_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+        let mut st =
+            db.prepare("SELECT status, COUNT(*) FROM items WHERE project_id = ? GROUP BY status")?;
+        let rows = st.query_map([project_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?;
         for row in rows {
             let (status, n) = row?;
             s.total += n;
@@ -520,27 +597,88 @@ impl Store {
             webp_sizes: p.webp_sizes.unwrap_or(cur.webp_sizes),
             filename_pattern: p.filename_pattern.unwrap_or(cur.filename_pattern),
             use_references: p.use_references.unwrap_or(cur.use_references),
+            provider: p.provider.unwrap_or(cur.provider),
+            text_provider: p.text_provider.unwrap_or(cur.text_provider),
             ..cur
         };
         if locked_tail.is_some_and(|t| t != n.shared_tail) {
-            return Err(msg("The spec is approved, so its shared prompt is frozen. Unlock it first."));
+            return Err(msg(
+                "The spec is approved, so its shared prompt is frozen. Unlock it first.",
+            ));
         }
         self.db().execute(
             "UPDATE projects SET name=?2, idea=?3, style_brief=?4, shared_tail=?5, output_dir=?6, image_model=?7, \
              text_model=?8, quality=?9, size=?10, background=?11, gate=?12, concurrency=?13, budget_usd=?14, \
-             export_sizes=?15, webp_sizes=?16, filename_pattern=?17, use_references=?18, updated_at=?19 WHERE id=?1",
+             export_sizes=?15, webp_sizes=?16, filename_pattern=?17, use_references=?18, updated_at=?19, \
+             provider=?20, text_provider=?21 WHERE id=?1",
             params![
                 id, n.name, n.idea, n.style_brief, n.shared_tail, n.output_dir, n.image_model, n.text_model, n.quality,
                 n.size, n.background, n.gate, n.concurrency, n.budget_usd,
                 serde_json::to_string(&n.export_sizes)?, serde_json::to_string(&n.webp_sizes)?,
-                n.filename_pattern, n.use_references as i64, now_ms()
+                n.filename_pattern, n.use_references as i64, now_ms(), n.provider, n.text_provider
             ],
         )?;
         self.project(id)
     }
 
+    /// Copies a project's settings, plan, prompts and style references into a new project.
+    /// Drawn images are not copied; every item starts as a draft.
+    pub fn duplicate_project(&self, id: &str) -> AppResult<Project> {
+        let src = self.project(id)?;
+        let copy = self.create_project_with(
+            &format!("{} copy", src.name),
+            &src.provider,
+            &src.image_model,
+            &src.text_provider,
+            &src.text_model,
+            src.concurrency,
+            src.budget_usd,
+        )?;
+        self.update_project(
+            &copy.id,
+            ProjectPatch {
+                idea: Some(src.idea.clone()),
+                style_brief: Some(src.style_brief.clone()),
+                shared_tail: Some(src.shared_tail.clone()),
+                output_dir: src.output_dir.clone(),
+                quality: Some(src.quality.clone()),
+                size: Some(src.size.clone()),
+                background: Some(src.background.clone()),
+                gate: Some(src.gate.clone()),
+                export_sizes: Some(src.export_sizes.clone()),
+                webp_sizes: Some(src.webp_sizes.clone()),
+                filename_pattern: Some(src.filename_pattern.clone()),
+                use_references: Some(src.use_references),
+                ..Default::default()
+            },
+        )?;
+        let items: Vec<(String, String, String)> = self
+            .items(id)?
+            .into_iter()
+            .map(|i| (i.slug, i.title, i.subject))
+            .collect();
+        self.replace_plan(&copy.id, &items)?;
+        let refs_dir = self.project_dir(&copy.id).join("refs");
+        for r in self.references(id)? {
+            std::fs::create_dir_all(&refs_dir)?;
+            let dest = refs_dir.join(format!("{}.png", new_id()));
+            if std::fs::copy(&r.file, &dest).is_ok() {
+                self.add_reference(&copy.id, &dest.to_string_lossy(), None)?;
+            }
+        }
+        self.event(
+            Some(&copy.id),
+            None,
+            "project",
+            &format!("Duplicated from {}", src.name),
+            None,
+        )?;
+        self.project(&copy.id)
+    }
+
     pub fn delete_project(&self, id: &str) -> AppResult<()> {
-        self.db().execute("DELETE FROM projects WHERE id = ?", [id])?;
+        self.db()
+            .execute("DELETE FROM projects WHERE id = ?", [id])?;
         let dir = self.project_dir(id);
         if dir.exists() {
             std::fs::remove_dir_all(dir)?;
@@ -554,14 +692,21 @@ impl Store {
         if locked {
             for item in self.items(project_id)? {
                 let sha = sha256(&full_prompt(&project, &item));
-                self.db().execute("UPDATE items SET prompt_sha = ? WHERE id = ?", params![sha, item.id])?;
+                self.db().execute(
+                    "UPDATE items SET prompt_sha = ? WHERE id = ?",
+                    params![sha, item.id],
+                )?;
             }
         }
         self.db().execute(
             "UPDATE projects SET spec_locked = ?2, updated_at = ?3 WHERE id = ?1",
             params![project_id, locked as i64, now_ms()],
         )?;
-        let what = if locked { "Spec approved; prompts frozen" } else { "Spec unlocked for editing" };
+        let what = if locked {
+            "Spec approved; prompts frozen"
+        } else {
+            "Spec unlocked for editing"
+        };
         self.event(Some(project_id), None, "spec", what, None)?;
         self.project(project_id)
     }
@@ -570,27 +715,41 @@ impl Store {
 
     pub fn items(&self, project_id: &str) -> AppResult<Vec<Item>> {
         let db = self.db();
-        let mut st = db.prepare(&format!("SELECT {ITEM_COLS} FROM items i WHERE i.project_id = ? ORDER BY i.ord"))?;
+        let mut st = db.prepare(&format!(
+            "SELECT {ITEM_COLS} FROM items i WHERE i.project_id = ? ORDER BY i.ord"
+        ))?;
         let rows = st.query_map([project_id], item_from_row)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
     pub fn item(&self, id: &str) -> AppResult<Item> {
         self.db()
-            .query_row(&format!("SELECT {ITEM_COLS} FROM items i WHERE i.id = ?"), [id], item_from_row)
+            .query_row(
+                &format!("SELECT {ITEM_COLS} FROM items i WHERE i.id = ?"),
+                [id],
+                item_from_row,
+            )
             .optional()?
             .ok_or_else(|| msg("Image not found."))
     }
 
     /// Replaces the project's unstarted items with a new plan. Items that already have
     /// attempts are kept, so a re-plan never throws away paid work.
-    pub fn replace_plan(&self, project_id: &str, items: &[(String, String, String)]) -> AppResult<()> {
+    pub fn replace_plan(
+        &self,
+        project_id: &str,
+        items: &[(String, String, String)],
+    ) -> AppResult<()> {
         let db = self.db();
         db.execute(
             "DELETE FROM items WHERE project_id = ? AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.item_id = items.id)",
             [project_id],
         )?;
-        let start: i64 = db.query_row("SELECT COALESCE(MAX(ord), -1) + 1 FROM items WHERE project_id = ?", [project_id], |r| r.get(0))?;
+        let start: i64 = db.query_row(
+            "SELECT COALESCE(MAX(ord), -1) + 1 FROM items WHERE project_id = ?",
+            [project_id],
+            |r| r.get(0),
+        )?;
         let t = now_ms();
         let mut used: std::collections::HashSet<String> = {
             let mut st = db.prepare("SELECT slug FROM items WHERE project_id = ?")?;
@@ -611,13 +770,21 @@ impl Store {
         let id = new_id();
         {
             let db = self.db();
-            let ord: i64 = db.query_row("SELECT COALESCE(MAX(ord), -1) + 1 FROM items WHERE project_id = ?", [project_id], |r| r.get(0))?;
+            let ord: i64 = db.query_row(
+                "SELECT COALESCE(MAX(ord), -1) + 1 FROM items WHERE project_id = ?",
+                [project_id],
+                |r| r.get(0),
+            )?;
             let mut used: std::collections::HashSet<String> = {
                 let mut st = db.prepare("SELECT slug FROM items WHERE project_id = ?")?;
                 let rows = st.query_map([project_id], |r| r.get::<_, String>(0))?;
                 rows.collect::<Result<_, _>>()?
             };
-            let base = if title.trim().is_empty() { format!("image-{}", ord + 1) } else { slugify(title) };
+            let base = if title.trim().is_empty() {
+                format!("image-{}", ord + 1)
+            } else {
+                slugify(title)
+            };
             let slug = unique_slug(&base, &mut used);
             db.execute(
                 "INSERT INTO items(id, project_id, ord, slug, title, subject, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?7)",
@@ -627,7 +794,12 @@ impl Store {
         self.item(&id)
     }
 
-    pub fn edit_item(&self, id: &str, title: Option<String>, subject: Option<String>) -> AppResult<Item> {
+    pub fn edit_item(
+        &self,
+        id: &str,
+        title: Option<String>,
+        subject: Option<String>,
+    ) -> AppResult<Item> {
         let item = self.item(id)?;
         let project = self.project(&item.project_id)?;
         if project.spec_locked && subject.as_ref().is_some_and(|s| s != &item.subject) {
@@ -635,13 +807,21 @@ impl Store {
         }
         self.db().execute(
             "UPDATE items SET title = ?2, subject = ?3, updated_at = ?4 WHERE id = ?1",
-            params![id, title.unwrap_or(item.title), subject.unwrap_or(item.subject), now_ms()],
+            params![
+                id,
+                title.unwrap_or(item.title),
+                subject.unwrap_or(item.subject),
+                now_ms()
+            ],
         )?;
         self.item(id)
     }
 
     pub fn delete_item(&self, id: &str) -> AppResult<()> {
-        self.db().execute("DELETE FROM items WHERE id = ? AND status NOT IN ('drawing')", [id])?;
+        self.db().execute(
+            "DELETE FROM items WHERE id = ? AND status NOT IN ('drawing')",
+            [id],
+        )?;
         Ok(())
     }
 
@@ -654,7 +834,12 @@ impl Store {
     }
 
     /// Puts items in the queue. `priority` jumps them ahead (used for previews).
-    pub fn enqueue(&self, project_id: &str, ids: Option<&[String]>, priority: i64) -> AppResult<usize> {
+    pub fn enqueue(
+        &self,
+        project_id: &str,
+        ids: Option<&[String]>,
+        priority: i64,
+    ) -> AppResult<usize> {
         let db = self.db();
         let n = match ids {
             Some(ids) => {
@@ -717,23 +902,38 @@ impl Store {
     }
 
     pub fn clear_redo(&self, id: &str) -> AppResult<()> {
-        self.db().execute("UPDATE items SET redo_note = NULL, redo_from = NULL WHERE id = ?", [id])?;
+        self.db().execute(
+            "UPDATE items SET redo_note = NULL, redo_from = NULL WHERE id = ?",
+            [id],
+        )?;
         Ok(())
     }
 
     pub fn bump_auto_retry(&self, id: &str) -> AppResult<()> {
-        self.db().execute("UPDATE items SET auto_retries = auto_retries + 1 WHERE id = ?", [id])?;
+        self.db().execute(
+            "UPDATE items SET auto_retries = auto_retries + 1 WHERE id = ?",
+            [id],
+        )?;
         Ok(())
     }
 
     pub fn approve(&self, id: &str, attempt: Option<&str>) -> AppResult<Item> {
         let item = self.item(id)?;
-        let attempt = attempt.map(String::from).or(item.current_attempt.clone()).ok_or_else(|| msg("Nothing to approve yet."))?;
+        let attempt = attempt
+            .map(String::from)
+            .or(item.current_attempt.clone())
+            .ok_or_else(|| msg("Nothing to approve yet."))?;
         self.db().execute(
             "UPDATE items SET status = 'approved', approved_attempt = ?2, current_attempt = ?2, updated_at = ?3 WHERE id = ?1",
             params![id, attempt, now_ms()],
         )?;
-        self.event(Some(&item.project_id), Some(id), "review", &format!("Approved {}", item.slug), None)?;
+        self.event(
+            Some(&item.project_id),
+            Some(id),
+            "review",
+            &format!("Approved {}", item.slug),
+            None,
+        )?;
         self.item(id)
     }
 
@@ -743,7 +943,13 @@ impl Store {
             "UPDATE items SET status = 'rejected', approved_attempt = NULL, updated_at = ?2 WHERE id = ?1",
             params![id, now_ms()],
         )?;
-        self.event(Some(&item.project_id), Some(id), "review", &format!("Rejected {}", item.slug), None)?;
+        self.event(
+            Some(&item.project_id),
+            Some(id),
+            "review",
+            &format!("Rejected {}", item.slug),
+            None,
+        )?;
         self.item(id)
     }
 
@@ -769,7 +975,11 @@ impl Store {
         let id = new_id();
         {
             let db = self.db();
-            let n: i64 = db.query_row("SELECT COALESCE(MAX(n), 0) + 1 FROM attempts WHERE item_id = ?", [&item.id], |r| r.get(0))?;
+            let n: i64 = db.query_row(
+                "SELECT COALESCE(MAX(n), 0) + 1 FROM attempts WHERE item_id = ?",
+                [&item.id],
+                |r| r.get(0),
+            )?;
             db.execute(
                 &format!("INSERT INTO attempts({ATTEMPT_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)"),
                 params![
@@ -778,7 +988,10 @@ impl Store {
                 ],
             )?;
             if file.is_some() {
-                db.execute("UPDATE items SET current_attempt = ?2 WHERE id = ?1", params![item.id, id])?;
+                db.execute(
+                    "UPDATE items SET current_attempt = ?2 WHERE id = ?1",
+                    params![item.id, id],
+                )?;
             }
         }
         self.attempt(&id)
@@ -786,14 +999,20 @@ impl Store {
 
     pub fn attempt(&self, id: &str) -> AppResult<Attempt> {
         self.db()
-            .query_row(&format!("SELECT {ATTEMPT_COLS} FROM attempts WHERE id = ?"), [id], attempt_from_row)
+            .query_row(
+                &format!("SELECT {ATTEMPT_COLS} FROM attempts WHERE id = ?"),
+                [id],
+                attempt_from_row,
+            )
             .optional()?
             .ok_or_else(|| msg("Attempt not found."))
     }
 
     pub fn attempts(&self, item_id: &str) -> AppResult<Vec<Attempt>> {
         let db = self.db();
-        let mut st = db.prepare(&format!("SELECT {ATTEMPT_COLS} FROM attempts WHERE item_id = ? ORDER BY n DESC"))?;
+        let mut st = db.prepare(&format!(
+            "SELECT {ATTEMPT_COLS} FROM attempts WHERE item_id = ? ORDER BY n DESC"
+        ))?;
         let rows = st.query_map([item_id], attempt_from_row)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
@@ -813,7 +1032,10 @@ impl Store {
                 |r| r.get(0),
             )
         };
-        Ok(SpendSummary { today_usd: sum(day_start)?, total_usd: sum(0)? })
+        Ok(SpendSummary {
+            today_usd: sum(day_start)?,
+            total_usd: sum(0)?,
+        })
     }
 
     pub fn record_plan_call(&self, project_id: &str, model: &str, cost: f64) -> AppResult<()> {
@@ -826,21 +1048,44 @@ impl Store {
 
     // ---------- references ----------
 
-    pub fn add_reference(&self, project_id: &str, file: &str, attempt_id: Option<&str>) -> AppResult<Reference> {
+    pub fn add_reference(
+        &self,
+        project_id: &str,
+        file: &str,
+        attempt_id: Option<&str>,
+    ) -> AppResult<Reference> {
         let id = new_id();
         self.db().execute(
             "INSERT INTO refs(id, project_id, file, attempt_id, created_at) VALUES (?1,?2,?3,?4,?5)",
             params![id, project_id, file, attempt_id, now_ms()],
         )?;
-        self.event(Some(project_id), None, "reference", "Added a style reference", None)?;
-        Ok(Reference { id, project_id: project_id.into(), file: file.into(), attempt_id: attempt_id.map(String::from), created_at: now_ms() })
+        self.event(
+            Some(project_id),
+            None,
+            "reference",
+            "Added a style reference",
+            None,
+        )?;
+        Ok(Reference {
+            id,
+            project_id: project_id.into(),
+            file: file.into(),
+            attempt_id: attempt_id.map(String::from),
+            created_at: now_ms(),
+        })
     }
 
     pub fn references(&self, project_id: &str) -> AppResult<Vec<Reference>> {
         let db = self.db();
         let mut st = db.prepare("SELECT id, project_id, file, attempt_id, created_at FROM refs WHERE project_id = ? ORDER BY created_at")?;
         let rows = st.query_map([project_id], |r| {
-            Ok(Reference { id: r.get(0)?, project_id: r.get(1)?, file: r.get(2)?, attempt_id: r.get(3)?, created_at: r.get(4)? })
+            Ok(Reference {
+                id: r.get(0)?,
+                project_id: r.get(1)?,
+                file: r.get(2)?,
+                attempt_id: r.get(3)?,
+                created_at: r.get(4)?,
+            })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
@@ -852,7 +1097,14 @@ impl Store {
 
     // ---------- events ----------
 
-    pub fn event(&self, project_id: Option<&str>, item_id: Option<&str>, kind: &str, message: &str, data: Option<&Value>) -> AppResult<()> {
+    pub fn event(
+        &self,
+        project_id: Option<&str>,
+        item_id: Option<&str>,
+        kind: &str,
+        message: &str,
+        data: Option<&Value>,
+    ) -> AppResult<()> {
         self.db().execute(
             "INSERT INTO events(project_id, item_id, kind, message, data, ts) VALUES (?1,?2,?3,?4,?5,?6)",
             params![project_id, item_id, kind, crate::error::redact(message), data.map(|d| d.to_string()), now_ms()],
@@ -893,8 +1145,16 @@ pub fn slugify(s: &str) -> String {
             dash = true;
         }
     }
-    let out = out.trim_end_matches('-').chars().take(60).collect::<String>();
-    if out.is_empty() { "image".into() } else { out }
+    let out = out
+        .trim_end_matches('-')
+        .chars()
+        .take(60)
+        .collect::<String>();
+    if out.is_empty() {
+        "image".into()
+    } else {
+        out
+    }
 }
 
 fn unique_slug(base: &str, used: &mut std::collections::HashSet<String>) -> String {
@@ -920,14 +1180,27 @@ mod tests {
     #[test]
     fn plan_claim_and_resume() {
         let (s, _d) = store();
-        let p = s.create_project("Potions", "gpt-image-1", "gpt-4.1-mini", 3, 0.0).unwrap();
-        s.replace_plan(&p.id, &[
-            ("red potion".into(), "Red".into(), "A red potion".into()),
-            ("red potion".into(), "Red 2".into(), "Another red potion".into()),
-            ("blue".into(), "Blue".into(), "A blue potion".into()),
-        ]).unwrap();
+        let p = s
+            .create_project("Potions", "gpt-image-1", "gpt-4.1-mini", 3, 0.0)
+            .unwrap();
+        s.replace_plan(
+            &p.id,
+            &[
+                ("red potion".into(), "Red".into(), "A red potion".into()),
+                (
+                    "red potion".into(),
+                    "Red 2".into(),
+                    "Another red potion".into(),
+                ),
+                ("blue".into(), "Blue".into(), "A blue potion".into()),
+            ],
+        )
+        .unwrap();
         let items = s.items(&p.id).unwrap();
-        assert_eq!(items.iter().map(|i| i.slug.as_str()).collect::<Vec<_>>(), ["red-potion", "red-potion-2", "blue"]);
+        assert_eq!(
+            items.iter().map(|i| i.slug.as_str()).collect::<Vec<_>>(),
+            ["red-potion", "red-potion-2", "blue"]
+        );
         assert_eq!(s.enqueue(&p.id, None, 0).unwrap(), 3);
         s.enqueue(&p.id, Some(&[items[2].id.clone()]), 10).unwrap(); // already queued: unchanged
         let first = s.claim_next(&p.id).unwrap().unwrap();
@@ -943,25 +1216,119 @@ mod tests {
     #[test]
     fn locked_spec_freezes_prompts_and_tail() {
         let (s, _d) = store();
-        let p = s.create_project("Icons", "gpt-image-1", "gpt-4.1-mini", 3, 0.0).unwrap();
-        s.update_project(&p.id, ProjectPatch { shared_tail: Some("flat icon".into()), ..Default::default() }).unwrap();
-        s.replace_plan(&p.id, &[("sword".into(), "Sword".into(), "A sword".into())]).unwrap();
+        let p = s
+            .create_project("Icons", "gpt-image-1", "gpt-4.1-mini", 3, 0.0)
+            .unwrap();
+        s.update_project(
+            &p.id,
+            ProjectPatch {
+                shared_tail: Some("flat icon".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        s.replace_plan(&p.id, &[("sword".into(), "Sword".into(), "A sword".into())])
+            .unwrap();
         s.lock_spec(&p.id, true).unwrap();
         let item = &s.items(&p.id).unwrap()[0];
-        assert_eq!(item.prompt_sha.as_deref(), Some(sha256("A sword\n\nflat icon").as_str()));
+        assert_eq!(
+            item.prompt_sha.as_deref(),
+            Some(sha256("A sword\n\nflat icon").as_str())
+        );
         assert!(s.edit_item(&item.id, None, Some("A spear".into())).is_err());
-        assert!(s.update_project(&p.id, ProjectPatch { shared_tail: Some("other".into()), ..Default::default() }).is_err());
+        assert!(s
+            .update_project(
+                &p.id,
+                ProjectPatch {
+                    shared_tail: Some("other".into()),
+                    ..Default::default()
+                }
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn duplicate_copies_plan_not_images() {
+        let (s, _d) = store();
+        let p = s
+            .create_project_with(
+                "Set",
+                "fal",
+                "fal-ai/flux/dev",
+                "google",
+                "gemini-2.5-flash",
+                2,
+                3.0,
+            )
+            .unwrap();
+        s.replace_plan(&p.id, &[("a".into(), "A".into(), "a".into())])
+            .unwrap();
+        let a = s.items(&p.id).unwrap()[0].clone();
+        s.insert_attempt(
+            &a,
+            "generate",
+            "m",
+            "medium",
+            "a",
+            None,
+            Some("x.png"),
+            0.05,
+            None,
+            None,
+            Some("pass"),
+            None,
+            10,
+        )
+        .unwrap();
+        let c = s.duplicate_project(&p.id).unwrap();
+        assert_eq!(
+            (c.provider.as_str(), c.text_provider.as_str()),
+            ("fal", "google")
+        );
+        let items = s.items(&c.id).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!((items[0].status.as_str(), items[0].attempts), ("draft", 0));
     }
 
     #[test]
     fn replan_keeps_paid_items() {
         let (s, _d) = store();
-        let p = s.create_project("Set", "gpt-image-1", "gpt-4.1-mini", 3, 0.0).unwrap();
-        s.replace_plan(&p.id, &[("a".into(), "A".into(), "a".into()), ("b".into(), "B".into(), "b".into())]).unwrap();
+        let p = s
+            .create_project("Set", "gpt-image-1", "gpt-4.1-mini", 3, 0.0)
+            .unwrap();
+        s.replace_plan(
+            &p.id,
+            &[
+                ("a".into(), "A".into(), "a".into()),
+                ("b".into(), "B".into(), "b".into()),
+            ],
+        )
+        .unwrap();
         let a = s.items(&p.id).unwrap()[0].clone();
-        s.insert_attempt(&a, "generate", "gpt-image-1", "medium", "a", None, Some("x.png"), 0.05, None, None, Some("pass"), None, 10).unwrap();
-        s.replace_plan(&p.id, &[("c".into(), "C".into(), "c".into())]).unwrap();
-        let slugs: Vec<String> = s.items(&p.id).unwrap().into_iter().map(|i| i.slug).collect();
+        s.insert_attempt(
+            &a,
+            "generate",
+            "gpt-image-1",
+            "medium",
+            "a",
+            None,
+            Some("x.png"),
+            0.05,
+            None,
+            None,
+            Some("pass"),
+            None,
+            10,
+        )
+        .unwrap();
+        s.replace_plan(&p.id, &[("c".into(), "C".into(), "c".into())])
+            .unwrap();
+        let slugs: Vec<String> = s
+            .items(&p.id)
+            .unwrap()
+            .into_iter()
+            .map(|i| i.slug)
+            .collect();
         assert_eq!(slugs, ["a", "c"]);
         assert!((s.spent(&p.id).unwrap() - 0.05).abs() < 1e-9);
     }

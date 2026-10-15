@@ -56,6 +56,15 @@ const start = () => act(() => api.runStart(ps.id!))
 const pause = () => act(() => api.runPause(ps.id!))
 const stop = () => act(() => api.runStop(ps.id!))
 
+async function duplicate() {
+  const p = await app.guard(() => api.projectDuplicate(ps.id!))
+  if (p) {
+    await app.refreshProjects()
+    app.notify('Duplicated: same plan and style, no images.')
+    router.push({ name: 'plan', params: { id: p.id } })
+  }
+}
+
 async function remove() {
   if (!ps.project) return
   if (!window.confirm(`Delete "${ps.project.name}" and all of its images? This cannot be undone.`)) return
@@ -114,6 +123,9 @@ async function remove() {
           >
             {{ remaining ? `Run ${remaining}` : 'Run' }}
           </UiButton>
+          <button class="rounded-md p-1.5 text-faint hover:bg-surface-3 hover:text-fg" title="Duplicate project" @click="duplicate">
+            <Icon name="layers" :size="15" />
+          </button>
           <button class="rounded-md p-1.5 text-faint hover:bg-bad-soft hover:text-bad" title="Delete project" @click="remove">
             <Icon name="trash" :size="15" />
           </button>

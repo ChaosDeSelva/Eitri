@@ -1,12 +1,16 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
-import { api, errorText, type Item, type KeyStatus, type ProjectSummary, type RunState, type Settings, type SpendSummary } from '@/lib/api'
+import { api, errorText, type Item, type KeyStatus, type ProjectSummary, type ProviderInfo, type RunState, type Settings, type SpendSummary } from '@/lib/api'
 
 type Theme = 'system' | 'light' | 'dark'
 
 export const useAppStore = defineStore('app', () => {
-  const key = ref<KeyStatus>({ has_key: false, last4: null })
+  const keys = ref<Record<string, KeyStatus>>({})
+  const catalog = ref<ProviderInfo[]>([])
+  const hasAnyKey = computed(() => Object.entries(keys.value).some(([id, k]) => k.has_key || (id === 'compatible' && !!settings.value?.base_urls.compatible)))
+  const keyCount = computed(() => Object.values(keys.value).filter((k) => k.has_key).length)
+  const providerName = (id: string) => catalog.value.find((p) => p.id === id)?.name ?? id
   const settings = ref<Settings | null>(null)
   const projects = ref<ProjectSummary[]>([])
   const spend = ref<SpendSummary>({ today_usd: 0, total_usd: 0 })
@@ -52,8 +56,8 @@ export const useAppStore = defineStore('app', () => {
     spend.value = (await guard(() => api.spend())) ?? spend.value
   }
 
-  async function refreshKey() {
-    key.value = (await guard(() => api.keyStatus())) ?? key.value
+  async function refreshKeys() {
+    keys.value = (await guard(() => api.keyStatuses())) ?? keys.value
   }
 
   function onItem(fn: (item: Item) => void) {
@@ -65,7 +69,8 @@ export const useAppStore = defineStore('app', () => {
     if (started) return
     started = true
     applyTheme()
-    await Promise.all([refreshKey(), refreshProjects(), refreshSpend()])
+    catalog.value = (await guard(() => api.providerCatalog())) ?? []
+    await Promise.all([refreshKeys(), refreshProjects(), refreshSpend()])
     settings.value = (await guard(() => api.settingsGet())) ?? null
     runs.value = (await guard(() => api.runStates())) ?? {}
     await listen<Item>('item-updated', (e) => itemListeners.forEach((fn) => fn(e.payload)))
@@ -78,7 +83,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    key, settings, projects, spend, runs, toast, theme,
-    start, notify, guard, refreshProjects, refreshSpend, refreshKey, onItem, setTheme,
+    keys, catalog, hasAnyKey, keyCount, providerName, settings, projects, spend, runs, toast, theme,
+    start, notify, guard, refreshProjects, refreshSpend, refreshKeys, onItem, setTheme,
   }
 })

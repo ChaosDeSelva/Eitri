@@ -110,8 +110,9 @@ async function run(onlyApproved: boolean) {
         </UiButton>
       </section>
 
-      <div v-if="last" class="rounded-lg bg-ok-soft p-3 text-[12px] text-ok selectable">
-        Wrote {{ last.written }} images to {{ last.dir }}<template v-if="last.skipped"> ({{ last.skipped }} skipped)</template>.
+      <div v-if="last" class="flex items-center gap-3 rounded-lg bg-ok-soft p-3 text-[12px] text-ok selectable">
+        <span class="flex-1">Wrote {{ last.written }} images to {{ last.dir }}<template v-if="last.skipped"> ({{ last.skipped }} skipped)</template>.</span>
+        <UiButton size="sm" icon="folder" @click="api.reveal(last.dir)">Show in folder</UiButton>
       </div>
     </div>
   </div>

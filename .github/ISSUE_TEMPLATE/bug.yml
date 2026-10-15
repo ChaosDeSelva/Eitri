@@ -1,0 +1,24 @@
+name: Bug report
+description: Something in Eitri does not work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Eitri version and OS
+      placeholder: 0.1.0 on macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: activity
+    attributes:
+      label: Activity log or error text
+      description: Copy from the project's Activity tab. Keys are redacted automatically, but please double check before posting.
+      render: text

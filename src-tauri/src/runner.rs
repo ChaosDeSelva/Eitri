@@ -8,8 +8,10 @@
 
 use crate::error::AppResult;
 use crate::gates::{self, GateMode, Verdict};
-use crate::openai::{ApiError, ImageRequest, OpenAi, DEFAULT_BASE};
+use crate::keying;
+use crate::openai::ApiError;
 use crate::pricing::{self, PriceTable};
+use crate::providers::{self, Draw, Kind, Provider};
 use crate::store::{full_prompt, new_id, Item, Project, Store};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -25,10 +27,12 @@ subject described below in exactly the same art style as the references: the sam
 level of detail, palette treatment, framing and background. Do not copy the reference subjects; take every feature \
 of the new image from the description.";
 
-pub const REDO_LEAD: &str = "Edit the attached image. Apply only the change below and keep everything else the same: \
+pub const REDO_LEAD: &str =
+    "Edit the attached image. Apply only the change below and keep everything else the same: \
 the subject's identity, the art style, the framing and the background.";
 
-pub const BG_FIX: &str = "Make the background fully transparent. Keep the subject exactly as it is, fully opaque, \
+pub const BG_FIX: &str =
+    "Make the background fully transparent. Keep the subject exactly as it is, fully opaque, \
 with no see-through patches.";
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -48,7 +52,25 @@ pub trait Notify: Send + Sync {
     fn spend(&self, project_id: &str, spent_usd: f64);
 }
 
-pub type KeySource = Arc<dyn Fn() -> AppResult<Option<String>> + Send + Sync>;
+/// Looks up the API key for a provider id.
+pub type KeySource = Arc<dyn Fn(&str) -> AppResult<Option<String>> + Send + Sync>;
+
+/// The base URL for a provider: a user override from Settings, or the provider default.
+/// `api_base` is the pre-provider setting name for OpenAI and is still honoured.
+pub fn base_url(store: &Store, kind: Kind) -> Option<String> {
+    store
+        .setting(&format!("base_url.{}", kind.id()))
+        .ok()
+        .flatten()
+        .or_else(|| {
+            if kind == Kind::Openai {
+                store.setting("api_base").ok().flatten()
+            } else {
+                None
+            }
+        })
+        .filter(|s| !s.trim().is_empty())
+}
 
 struct RunCtl {
     state: watch::Sender<RunState>,
@@ -82,7 +104,12 @@ enum Halt {
 
 impl Runner {
     pub fn new(store: Arc<Store>, notify: Arc<dyn Notify>, key: KeySource) -> Arc<Runner> {
-        Arc::new(Runner { store, notify, key, runs: Mutex::new(HashMap::new()) })
+        Arc::new(Runner {
+            store,
+            notify,
+            key,
+            runs: Mutex::new(HashMap::new()),
+        })
     }
 
     fn ctl(&self, project_id: &str) -> Option<Arc<RunCtl>> {
@@ -90,11 +117,18 @@ impl Runner {
     }
 
     pub fn state(&self, project_id: &str) -> RunState {
-        self.ctl(project_id).map(|c| c.get()).unwrap_or(RunState::Idle)
+        self.ctl(project_id)
+            .map(|c| c.get())
+            .unwrap_or(RunState::Idle)
     }
 
     pub fn states(&self) -> HashMap<String, RunState> {
-        self.runs.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.get())).collect()
+        self.runs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.get()))
+            .collect()
     }
 
     /// Starts the queue, or resumes it if paused.
@@ -106,7 +140,8 @@ impl Runner {
                 RunState::Paused => {
                     ctl.state.send_replace(RunState::Running);
                     self.notify.run(project_id, &RunState::Running);
-                    self.store.event(Some(project_id), None, "run", "Resumed", None)?;
+                    self.store
+                        .event(Some(project_id), None, "run", "Resumed", None)?;
                     return Ok(RunState::Running);
                 }
                 RunState::Running => return Ok(RunState::Running),
@@ -115,10 +150,14 @@ impl Runner {
             }
         }
         let (tx, _) = watch::channel(RunState::Running);
-        let ctl = Arc::new(RunCtl { state: tx, concurrency: AtomicUsize::new(project.concurrency.clamp(1, 8) as usize) });
+        let ctl = Arc::new(RunCtl {
+            state: tx,
+            concurrency: AtomicUsize::new(project.concurrency.clamp(1, 8) as usize),
+        });
         runs.insert(project_id.to_string(), ctl.clone());
         drop(runs);
-        self.store.event(Some(project_id), None, "run", "Started", None)?;
+        self.store
+            .event(Some(project_id), None, "run", "Started", None)?;
         self.notify.run(project_id, &RunState::Running);
         let me = self.clone();
         let pid = project_id.to_string();
@@ -130,7 +169,9 @@ impl Runner {
         if let Some(ctl) = self.ctl(project_id) {
             if ctl.get() == RunState::Running {
                 ctl.state.send_replace(RunState::Paused);
-                let _ = self.store.event(Some(project_id), None, "run", "Paused", None);
+                let _ = self
+                    .store
+                    .event(Some(project_id), None, "run", "Paused", None);
             }
             let s = ctl.get();
             self.notify.run(project_id, &s);
@@ -142,7 +183,13 @@ impl Runner {
     pub fn stop(&self, project_id: &str) -> RunState {
         if let Some(ctl) = self.ctl(project_id) {
             ctl.state.send_replace(RunState::Stopping);
-            let _ = self.store.event(Some(project_id), None, "run", "Stopping after the images in flight", None);
+            let _ = self.store.event(
+                Some(project_id),
+                None,
+                "run",
+                "Stopping after the images in flight",
+                None,
+            );
             self.notify.run(project_id, &RunState::Stopping);
             return RunState::Stopping;
         }
@@ -151,7 +198,8 @@ impl Runner {
 
     pub fn set_concurrency(&self, project_id: &str, n: usize) {
         if let Some(ctl) = self.ctl(project_id) {
-            ctl.concurrency.store(n.clamp(1, MAX_WORKERS), Ordering::SeqCst);
+            ctl.concurrency
+                .store(n.clamp(1, MAX_WORKERS), Ordering::SeqCst);
         }
     }
 
@@ -179,7 +227,9 @@ impl Runner {
             RunState::Stopped(r) => format!("Run stopped: {r}"),
             _ => "Run finished: the queue is empty".to_string(),
         };
-        let _ = self.store.event(Some(&project_id), None, "run", &message, None);
+        let _ = self
+            .store
+            .event(Some(&project_id), None, "run", &message, None);
         // Report Idle with the reason attached so the UI can show why it stopped.
         self.notify.run(&project_id, &end);
     }
@@ -204,8 +254,12 @@ impl Runner {
                 tokio::time::sleep(Duration::from_millis(400)).await;
                 continue;
             }
-            let Ok(project) = self.store.project(&project_id) else { return };
-            if project.budget_usd > 0.0 && self.store.spent(&project_id).unwrap_or(0.0) >= project.budget_usd {
+            let Ok(project) = self.store.project(&project_id) else {
+                return;
+            };
+            if project.budget_usd > 0.0
+                && self.store.spent(&project_id).unwrap_or(0.0) >= project.budget_usd
+            {
                 ctl.stop(format!("Budget of ${:.2} reached", project.budget_usd));
                 return;
             }
@@ -216,7 +270,9 @@ impl Runner {
             self.notify.item(&item);
             if let Err(Halt::Stop(reason)) = self.process(&project, &item).await {
                 let _ = self.store.set_status(&item.id, "queued", None);
-                let _ = self.store.event(Some(&project_id), Some(&item.id), "limit", &reason, None);
+                let _ = self
+                    .store
+                    .event(Some(&project_id), Some(&item.id), "limit", &reason, None);
                 ctl.stop(reason);
             }
             if let Ok(fresh) = self.store.item(&item.id) {
@@ -235,7 +291,10 @@ impl Runner {
 
     fn read_png(path: &str) -> Option<(String, Vec<u8>)> {
         let bytes = std::fs::read(path).ok()?;
-        let name = std::path::Path::new(path).file_name()?.to_string_lossy().to_string();
+        let name = std::path::Path::new(path)
+            .file_name()?
+            .to_string_lossy()
+            .to_string();
         Some((name, bytes))
     }
 
@@ -248,83 +307,181 @@ impl Runner {
         if refs.is_empty() {
             return vec![];
         }
-        let start = item.id.bytes().fold(7u64, |h, b| h.wrapping_mul(31).wrapping_add(b as u64)) as usize % refs.len();
+        let start =
+            item.id
+                .bytes()
+                .fold(7u64, |h, b| h.wrapping_mul(31).wrapping_add(b as u64)) as usize
+                % refs.len();
         (0..refs.len().min(3))
             .filter_map(|i| Self::read_png(&refs[(start + i) % refs.len()].file))
             .collect()
     }
 
     async fn process(&self, project: &Project, item: &Item) -> Result<(), Halt> {
-        let key = match (self.key)() {
+        let kind = Kind::parse(&project.provider);
+        let key = match (self.key)(kind.id()) {
             Ok(Some(k)) => k,
-            Ok(None) => return Err(Halt::Stop("No API key. Add one in Settings.".into())),
+            Ok(None) if kind == Kind::Compatible => String::new(),
+            Ok(None) => {
+                return Err(Halt::Stop(format!(
+                    "No {} API key. Add one in Settings.",
+                    kind.id()
+                )))
+            }
             Err(e) => return Err(Halt::Stop(format!("Could not read the API key: {e}"))),
         };
-        let base = self.store.setting("api_base").ok().flatten().unwrap_or_else(|| DEFAULT_BASE.to_string());
-        let client = OpenAi::new(&base, key);
-        let base_prompt = full_prompt(project, item);
+        let provider = Provider::new(kind, key, base_url(&self.store, kind));
+        let caps = providers::caps_for(kind, &project.image_model);
+        // Without native alpha, a transparent set is drawn on a flat backdrop that is keyed out.
+        let keyed = project.background == "transparent" && !caps.transparent;
+        let mut base_prompt = full_prompt(project, item);
+        if keyed {
+            base_prompt = format!("{base_prompt}\n\n{}", keying::KEY_TAIL);
+        }
+        let refs = || {
+            if caps.references {
+                self.references_for(project, item)
+            } else {
+                vec![]
+            }
+        };
 
-        let (kind, prompt, images) = match (&item.redo_note, &item.redo_from) {
-            (Some(note), Some(from)) => {
-                let src = self.store.attempt(from).ok().and_then(|a| a.file).and_then(|f| Self::read_png(&f));
+        let (kind_label, prompt, images) = match (&item.redo_note, &item.redo_from) {
+            (Some(note), Some(from)) if caps.edit => {
+                let src = self
+                    .store
+                    .attempt(from)
+                    .ok()
+                    .and_then(|a| a.file)
+                    .and_then(|f| Self::read_png(&f));
                 match src {
                     Some(src) => ("edit", format!("{REDO_LEAD}\n\nChange: {note}\n\nOriginal brief, for context:\n{base_prompt}"), vec![src]),
-                    None => ("redo", format!("{base_prompt}\n\nAdditional direction: {note}"), self.references_for(project, item)),
+                    None => ("redo", format!("{base_prompt}\n\nAdditional direction: {note}"), refs()),
                 }
             }
-            (Some(note), None) => ("redo", format!("{base_prompt}\n\nAdditional direction: {note}"), self.references_for(project, item)),
+            (Some(note), _) => (
+                "redo",
+                format!("{base_prompt}\n\nAdditional direction: {note}"),
+                refs(),
+            ),
             _ => {
-                let refs = self.references_for(project, item);
-                let prompt = if refs.is_empty() { base_prompt.clone() } else { format!("{STYLE_LEAD}\n\n{base_prompt}") };
+                let refs = refs();
+                let prompt = if refs.is_empty() {
+                    base_prompt.clone()
+                } else {
+                    format!("{STYLE_LEAD}\n\n{base_prompt}")
+                };
                 ("generate", prompt, refs)
             }
         };
-        let req = ImageRequest {
+        let draw = Draw {
             model: project.image_model.clone(),
             prompt: prompt.clone(),
             size: project.size.clone(),
             quality: project.quality.clone(),
-            background: project.background.clone(),
+            background: if keyed {
+                "opaque".into()
+            } else {
+                project.background.clone()
+            },
+            images,
         };
 
         let started = Instant::now();
         let mut result = Err(ApiError::Transient("not attempted".into()));
         for attempt in 0..4u32 {
-            result = if images.is_empty() { client.generate(&req).await } else { client.edit(&req, &images).await };
+            result = provider.draw(&draw).await;
             match &result {
                 Err(e) if e.retryable() && attempt < 3 => {
-                    let base_wait = if matches!(e, ApiError::RateLimited(_)) { 20 } else { 3 };
+                    let base_wait = if matches!(e, ApiError::RateLimited(_)) {
+                        20
+                    } else {
+                        3
+                    };
                     let jitter = rand::random::<u64>() % 2000;
-                    tokio::time::sleep(Duration::from_millis(base_wait * 1000 * (attempt as u64 + 1) + jitter)).await;
+                    tokio::time::sleep(Duration::from_millis(
+                        base_wait * 1000 * (attempt as u64 + 1) + jitter,
+                    ))
+                    .await;
                 }
                 _ => break,
             }
         }
         let ms = started.elapsed().as_millis() as i64;
         let note = item.redo_note.as_deref();
+        let kind = kind_label;
+        let req = &draw;
 
-        let res = match result {
+        let mut res = match result {
             Ok(res) => res,
             Err(e) => {
                 let text = e.to_string();
-                let _ = self.store.insert_attempt(item, kind, &req.model, &req.quality, &prompt, note, None, 0.0, None, None, None, Some(&text), ms);
+                let _ = self.store.insert_attempt(
+                    item,
+                    kind,
+                    &req.model,
+                    &req.quality,
+                    &prompt,
+                    note,
+                    None,
+                    0.0,
+                    None,
+                    None,
+                    None,
+                    Some(&text),
+                    ms,
+                );
                 if e.stops_run() {
                     return Err(Halt::Stop(text));
                 }
-                let status = if matches!(e, ApiError::Refused(_)) { "refused" } else { "failed" };
+                let status = if matches!(e, ApiError::Refused(_)) {
+                    "refused"
+                } else {
+                    "failed"
+                };
                 let _ = self.store.set_status(&item.id, status, Some(&text));
-                let _ = self.store.event(Some(&project.id), Some(&item.id), "error", &format!("{}: {text}", item.slug), None);
+                let _ = self.store.event(
+                    Some(&project.id),
+                    Some(&item.id),
+                    "error",
+                    &format!("{}: {text}", item.slug),
+                    None,
+                );
                 return Ok(());
             }
         };
+        if keyed {
+            if let Some(png) = keying::key_out(&res.png) {
+                res.png = png;
+            }
+        }
 
-        let cost = pricing::cost(&self.prices(), &req.model, &res.usage);
+        let token_billed = res.usage.output > 0 || res.usage.input_text > 0;
+        let cost = if token_billed {
+            pricing::cost(&self.prices(), &req.model, &res.usage)
+        } else {
+            providers::estimate_for(provider.kind, &req.model)
+        };
         let usage = serde_json::to_value(&res.usage).ok();
         let img = match image::load_from_memory(&res.png) {
             Ok(img) => img,
             Err(e) => {
                 let text = format!("The returned image could not be decoded: {e}");
-                let _ = self.store.insert_attempt(item, kind, &req.model, &req.quality, &prompt, note, None, cost, usage.as_ref(), None, None, Some(&text), ms);
+                let _ = self.store.insert_attempt(
+                    item,
+                    kind,
+                    &req.model,
+                    &req.quality,
+                    &prompt,
+                    note,
+                    None,
+                    cost,
+                    usage.as_ref(),
+                    None,
+                    None,
+                    Some(&text),
+                    ms,
+                );
                 let _ = self.store.set_status(&item.id, "failed", Some(&text));
                 return Ok(());
             }
@@ -332,7 +489,8 @@ impl Runner {
         let report = gates::evaluate(&img, GateMode::parse(&project.gate));
         let dir = self.store.project_dir(&project.id).join("images");
         let file = dir.join(format!("{}-{}.png", item.slug, new_id()));
-        if let Err(e) = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, &res.png)) {
+        if let Err(e) = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, &res.png))
+        {
             return Err(Halt::Stop(format!("Could not save images to disk: {e}")));
         }
         let file_str = file.to_string_lossy().to_string();
@@ -342,9 +500,21 @@ impl Runner {
             Verdict::Fail => "fail",
         };
         let gate_json = serde_json::to_value(&report).ok();
-        let saved = self
-            .store
-            .insert_attempt(item, kind, &req.model, &req.quality, &prompt, note, Some(&file_str), cost, usage.as_ref(), gate_json.as_ref(), Some(verdict), None, ms);
+        let saved = self.store.insert_attempt(
+            item,
+            kind,
+            &req.model,
+            &req.quality,
+            &prompt,
+            note,
+            Some(&file_str),
+            cost,
+            usage.as_ref(),
+            gate_json.as_ref(),
+            Some(verdict),
+            None,
+            ms,
+        );
         let _ = self.store.clear_redo(&item.id);
         let reasons = report.reasons.join(" ");
 
@@ -366,11 +536,23 @@ impl Runner {
                 } else {
                     let _ = self.store.requeue_with(&item.id, None, None);
                 }
-                let _ = self.store.event(Some(&project.id), Some(&item.id), "gate", &format!("{} failed the check, retrying once: {reasons}", item.slug), None);
+                let _ = self.store.event(
+                    Some(&project.id),
+                    Some(&item.id),
+                    "gate",
+                    &format!("{} failed the check, retrying once: {reasons}", item.slug),
+                    None,
+                );
             }
             Verdict::Fail => {
                 let _ = self.store.set_status(&item.id, "flagged", Some(&reasons));
-                let _ = self.store.event(Some(&project.id), Some(&item.id), "gate", &format!("{} needs review: {reasons}", item.slug), None);
+                let _ = self.store.event(
+                    Some(&project.id),
+                    Some(&item.id),
+                    "gate",
+                    &format!("{} needs review: {reasons}", item.slug),
+                    None,
+                );
             }
         }
         Ok(())

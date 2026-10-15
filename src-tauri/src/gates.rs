@@ -60,7 +60,12 @@ pub fn evaluate(img: &DynamicImage, mode: GateMode) -> GateReport {
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
     let a = |x: u32, y: u32| rgba.get_pixel(x.min(w - 1), y.min(h - 1))[3];
-    let corners = [a(2, 2), a(w.saturating_sub(3), 2), a(2, h.saturating_sub(3)), a(w.saturating_sub(3), h.saturating_sub(3))];
+    let corners = [
+        a(2, 2),
+        a(w.saturating_sub(3), 2),
+        a(2, h.saturating_sub(3)),
+        a(w.saturating_sub(3), h.saturating_sub(3)),
+    ];
     let small = image::imageops::resize(&rgba, N as u32, N as u32, FilterType::Triangle);
     let open = open_mask(&small);
     let open_count = open.iter().filter(|&&o| o).count();
@@ -91,11 +96,15 @@ pub fn evaluate(img: &DynamicImage, mode: GateMode) -> GateReport {
             }
             if holes >= 10 {
                 verdict = Verdict::Fail;
-                reasons.push(format!("{holes} see-through pixels sealed inside the lower body."));
+                reasons.push(format!(
+                    "{holes} see-through pixels sealed inside the lower body."
+                ));
             }
             if verdict == Verdict::Pass && corners.iter().all(|&c| c < 20) {
                 verdict = Verdict::Flag;
-                reasons.push("All four corners are clear: the subject may sit small in the frame.".into());
+                reasons.push(
+                    "All four corners are clear: the subject may sit small in the frame.".into(),
+                );
             }
         }
         GateMode::Figure => {
@@ -104,11 +113,16 @@ pub fn evaluate(img: &DynamicImage, mode: GateMode) -> GateReport {
                 reasons.push("Solid background: no transparency at the corners.".into());
             } else if !(background > 0.08 && background < 0.88) {
                 verdict = Verdict::Fail;
-                reasons.push(format!("Background covers {:.0}% of the frame.", background * 100.0));
+                reasons.push(format!(
+                    "Background covers {:.0}% of the frame.",
+                    background * 100.0
+                ));
             }
             if enclosed >= 10 {
                 verdict = Verdict::Fail;
-                reasons.push(format!("{enclosed} see-through pixels sealed inside the subject."));
+                reasons.push(format!(
+                    "{enclosed} see-through pixels sealed inside the subject."
+                ));
             }
         }
     }
@@ -119,7 +133,17 @@ pub fn evaluate(img: &DynamicImage, mode: GateMode) -> GateReport {
         reasons.push(format!("Not square: {w}x{h}."));
     }
 
-    GateReport { verdict, reasons, corners, holes, enclosed, background, solid, width: w, height: h }
+    GateReport {
+        verdict,
+        reasons,
+        corners,
+        holes,
+        enclosed,
+        background,
+        solid,
+        width: w,
+        height: h,
+    }
 }
 
 fn open_mask(img: &RgbaImage) -> Vec<bool> {
@@ -128,22 +152,39 @@ fn open_mask(img: &RgbaImage) -> Vec<bool> {
 
 fn flood(open: &[bool], seeds: &[(usize, usize)]) -> Vec<bool> {
     let mut seen = vec![false; N * N];
-    let mut stack: Vec<(usize, usize)> = seeds.iter().copied().filter(|&(x, y)| open[y * N + x]).collect();
+    let mut stack: Vec<(usize, usize)> = seeds
+        .iter()
+        .copied()
+        .filter(|&(x, y)| open[y * N + x])
+        .collect();
     while let Some((x, y)) = stack.pop() {
         let i = y * N + x;
         if seen[i] || !open[i] {
             continue;
         }
         seen[i] = true;
-        if x > 0 { stack.push((x - 1, y)); }
-        if x + 1 < N { stack.push((x + 1, y)); }
-        if y > 0 { stack.push((x, y - 1)); }
-        if y + 1 < N { stack.push((x, y + 1)); }
+        if x > 0 {
+            stack.push((x - 1, y));
+        }
+        if x + 1 < N {
+            stack.push((x + 1, y));
+        }
+        if y > 0 {
+            stack.push((x, y - 1));
+        }
+        if y + 1 < N {
+            stack.push((x, y + 1));
+        }
     }
     seen
 }
 
-fn count_unreached(open: &[bool], seen: &[bool], xs: std::ops::Range<usize>, ys: std::ops::Range<usize>) -> u32 {
+fn count_unreached(
+    open: &[bool],
+    seen: &[bool],
+    xs: std::ops::Range<usize>,
+    ys: std::ops::Range<usize>,
+) -> u32 {
     let mut n = 0;
     for y in ys {
         for x in xs.clone() {
@@ -200,7 +241,10 @@ mod tests {
 
     #[test]
     fn portrait_solid_background_fails() {
-        let r = evaluate(&DynamicImage::ImageRgba8(canvas(Rgba([255, 255, 255, 255]))), GateMode::Portrait);
+        let r = evaluate(
+            &DynamicImage::ImageRgba8(canvas(Rgba([255, 255, 255, 255]))),
+            GateMode::Portrait,
+        );
         assert_eq!(r.verdict, Verdict::Fail);
         assert!(r.solid);
     }
@@ -237,7 +281,10 @@ mod tests {
 
     #[test]
     fn none_mode_accepts_opaque_art() {
-        let r = evaluate(&DynamicImage::ImageRgba8(canvas(Rgba([10, 20, 30, 255]))), GateMode::None);
+        let r = evaluate(
+            &DynamicImage::ImageRgba8(canvas(Rgba([10, 20, 30, 255]))),
+            GateMode::None,
+        );
         assert_eq!(r.verdict, Verdict::Pass);
     }
 }

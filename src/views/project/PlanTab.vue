@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { partialPlan, type PartialPlan } from '@/lib/partialPlan'
 import Icon from '@/components/Icon.vue'
+import Pill from '@/components/Pill.vue'
 import StatusPill from '@/components/StatusPill.vue'
 import UiButton from '@/components/UiButton.vue'
 import { useAppStore } from '@/stores/app'
@@ -37,7 +38,18 @@ watch(
 
 const locked = computed(() => !!ps.project?.spec_locked)
 const refs = computed(() => ps.detail?.references ?? [])
-const perImage = computed(() => estimatePerImage(ps.project?.quality ?? 'medium', refs.value.length > 0 && !!ps.project?.use_references))
+const caps = computed(() => ps.detail?.caps)
+const imgProvider = computed(() => app.catalog.find((p) => p.id === ps.project?.provider))
+const txtProvider = computed(() => app.catalog.find((p) => p.id === ps.project?.text_provider))
+const planners = computed(() => app.catalog.filter((p) => p.planning))
+const keyReady = (id: string | undefined) => !!id && (!!app.keys[id]?.has_key || (id === 'compatible' && !!app.settings?.base_urls.compatible))
+const canPlan = computed(() => keyReady(ps.project?.text_provider))
+const canDraw = computed(() => keyReady(ps.project?.provider))
+const perImage = computed(() => {
+  const base = ps.detail?.estimate_usd ?? estimatePerImage(ps.project?.quality ?? 'medium', false)
+  const refsOn = refs.value.length > 0 && !!ps.project?.use_references && !!caps.value?.references
+  return refsOn ? base * 1.45 : base
+})
 const estimate = computed(() => perImage.value * Math.max(ps.items.length, 0))
 const selectedIds = computed(() => [...ps.selected].filter((id) => ps.items.some((i) => i.id === id)))
 const allSelected = computed(() => ps.items.length > 0 && selectedIds.value.length === ps.items.length)
@@ -93,6 +105,47 @@ async function addItem() {
     newSubject.value = ''
     await ps.refresh()
   }
+}
+
+async function setProvider(id: string) {
+  const first = app.catalog.find((p) => p.id === id)?.image_models[0]?.id
+  await ps.update({ provider: id, ...(first ? { image_model: first } : {}) })
+  await ps.refresh()
+}
+
+async function setPlanner(id: string) {
+  const first = app.catalog.find((p) => p.id === id)?.text_models[0]
+  await ps.update({ text_provider: id, ...(first ? { text_model: first } : {}) })
+}
+
+async function setModel(model: string) {
+  await ps.update({ image_model: model })
+  await ps.refresh()
+}
+
+async function importSpec() {
+  const path = await open({ multiple: false, filters: [{ name: 'Spec or prompt list', extensions: ['json', 'csv'] }] })
+  if (typeof path !== 'string') return
+  if (ps.items.length && !window.confirm('Replace the unstarted images with the imported list? Drawn images are kept.')) return
+  const n = await app.guard(() => api.specImport(ps.id!, path))
+  if (n !== undefined) {
+    await ps.refresh()
+    const p = ps.project
+    if (p) {
+      meta.style_brief = p.style_brief
+      meta.shared_tail = p.shared_tail
+    }
+    app.refreshProjects()
+    app.notify(`Imported ${n} images.`)
+  }
+}
+
+async function exportSpec() {
+  const name = (ps.project?.name ?? 'spec').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  const path = await save({ defaultPath: `${name}.eitri.json`, filters: [{ name: 'Eitri spec', extensions: ['json'] }] })
+  if (!path) return
+  await app.guard(() => api.specExport(ps.id!, path))
+  app.notify('Spec exported.')
 }
 
 async function preview() {
@@ -177,22 +230,52 @@ async function removeRef(id: string) {
           <span class="label">Extra direction (optional)</span>
           <textarea v-model="form.notes" rows="2" class="field" :disabled="locked" placeholder="Audience, palette, must-haves, things to avoid" />
         </label>
-        <UiButton variant="primary" icon="sparkles" class="w-full" :loading="drafting" :disabled="locked || !app.key.has_key" @click="draft">
+        <UiButton variant="primary" icon="sparkles" class="w-full" :loading="drafting" :disabled="locked || !canPlan" @click="draft">
           {{ ps.items.length ? 'Re-draft plan' : 'Draft plan' }}
         </UiButton>
-        <p v-if="!app.key.has_key" class="text-[12px] text-bad">Add your API key in Settings to plan and draw.</p>
+        <p v-if="!canPlan" class="text-[12px] text-bad">Add a {{ txtProvider?.name ?? 'planning' }} key in Settings to draft plans.</p>
+        <div class="flex gap-2">
+          <UiButton size="sm" variant="ghost" icon="folder" class="flex-1" :disabled="locked" @click="importSpec">Import CSV / JSON</UiButton>
+          <UiButton size="sm" variant="ghost" icon="export" class="flex-1" :disabled="!ps.items.length" @click="exportSpec">Export spec</UiButton>
+        </div>
       </div>
 
-      <h2 class="mt-7 mb-3 flex items-center gap-2 text-[13px] font-bold"><Icon name="settings" /> Models and quality</h2>
+      <h2 class="mt-7 mb-3 flex items-center gap-2 text-[13px] font-bold"><Icon name="settings" /> Provider and model</h2>
       <div class="space-y-3">
-        <label class="block">
-          <span class="label">Image model</span>
-          <input :value="ps.project.image_model" class="field font-mono" @change="ps.update({ image_model: ($event.target as HTMLInputElement).value })" />
-        </label>
-        <label class="block">
-          <span class="label">Planning model</span>
-          <input :value="ps.project.text_model" class="field font-mono" @change="ps.update({ text_model: ($event.target as HTMLInputElement).value })" />
-        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label>
+            <span class="label">Draws with</span>
+            <select :value="ps.project.provider" class="field" @change="setProvider(($event.target as HTMLSelectElement).value)">
+              <option v-for="p in app.catalog" :key="p.id" :value="p.id">{{ p.name }}{{ keyReady(p.id) ? '' : ' (no key)' }}</option>
+            </select>
+          </label>
+          <label>
+            <span class="label">Image model</span>
+            <input :value="ps.project.image_model" class="field font-mono" list="project-image-models" @change="setModel(($event.target as HTMLInputElement).value)" />
+            <datalist id="project-image-models">
+              <option v-for="m in imgProvider?.image_models ?? []" :key="m.id" :value="m.id">{{ m.label }}</option>
+            </datalist>
+          </label>
+        </div>
+        <div v-if="caps" class="flex flex-wrap gap-1.5">
+          <Pill :tone="caps.transparent ? 'ok' : 'warn'">{{ caps.transparent ? 'Real transparency' : 'Transparency by keying' }}</Pill>
+          <Pill :tone="caps.references ? 'ok' : 'neutral'">{{ caps.references ? 'Style references' : 'No references' }}</Pill>
+          <Pill :tone="caps.edit ? 'ok' : 'neutral'">{{ caps.edit ? 'Edits with notes' : 'Redo redraws' }}</Pill>
+        </div>
+        <p v-if="!canDraw" class="text-[12px] text-bad">No {{ imgProvider?.name }} key yet. Add it in Settings.</p>
+        <div class="grid grid-cols-2 gap-3">
+          <label>
+            <span class="label">Plans with</span>
+            <select :value="ps.project.text_provider" class="field" @change="setPlanner(($event.target as HTMLSelectElement).value)">
+              <option v-for="p in planners" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+          </label>
+          <label>
+            <span class="label">Planning model</span>
+            <input :value="ps.project.text_model" class="field font-mono" list="project-text-models" @change="ps.update({ text_model: ($event.target as HTMLInputElement).value })" />
+            <datalist id="project-text-models"><option v-for="m in txtProvider?.text_models ?? []" :key="m" :value="m" /></datalist>
+          </label>
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <label>
             <span class="label">Quality</span>
@@ -210,7 +293,7 @@ async function removeRef(id: string) {
         <div class="rounded-lg bg-surface-2 p-3 text-[12px]">
           <div class="flex justify-between"><span class="text-muted">Estimate per image</span><span class="font-bold tabular-nums">{{ usd(perImage) }}</span></div>
           <div class="mt-1 flex justify-between"><span class="text-muted">Whole plan ({{ ps.items.length }})</span><span class="font-bold tabular-nums">{{ usd(estimate) }}</span></div>
-          <p class="mt-1.5 text-faint">Real spend is computed from each response's token usage.</p>
+          <p class="mt-1.5 text-faint">Real spend is recorded per image as it is drawn.</p>
         </div>
       </div>
 

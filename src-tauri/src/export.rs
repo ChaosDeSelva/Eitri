@@ -21,7 +21,9 @@ pub fn file_stem(project: &Project, item: &Item) -> String {
         .replace("{slug}", &item.slug)
         .replace("{n}", &format!("{:03}", item.ord + 1))
         .replace("{project}", &crate::store::slugify(&project.name));
-    stem.chars().filter(|c| !matches!(c, '/' | '\\' | ':' | '\0')).collect()
+    stem.chars()
+        .filter(|c| !matches!(c, '/' | '\\' | ':' | '\0'))
+        .collect()
 }
 
 /// Pads to a square on transparent (centred), then resizes with Lanczos.
@@ -30,7 +32,12 @@ pub fn square(img: &DynamicImage, size: u32) -> RgbaImage {
     let (w, h) = rgba.dimensions();
     let side = w.max(h);
     let mut canvas = RgbaImage::from_pixel(side, side, image::Rgba([0, 0, 0, 0]));
-    image::imageops::overlay(&mut canvas, &rgba, ((side - w) / 2) as i64, ((side - h) / 2) as i64);
+    image::imageops::overlay(
+        &mut canvas,
+        &rgba,
+        ((side - w) / 2) as i64,
+        ((side - h) / 2) as i64,
+    );
     if side == size {
         canvas
     } else {
@@ -50,18 +57,26 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> AppResult<()> {
 
 pub fn encode_png(img: &RgbaImage) -> AppResult<Vec<u8>> {
     let mut out = Vec::new();
-    DynamicImage::ImageRgba8(img.clone()).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)?;
+    DynamicImage::ImageRgba8(img.clone())
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)?;
     Ok(out)
 }
 
 pub fn encode_webp(img: &RgbaImage, quality: f32) -> Vec<u8> {
     let (w, h) = img.dimensions();
-    webp::Encoder::from_rgba(img.as_raw(), w, h).encode(quality).to_vec()
+    webp::Encoder::from_rgba(img.as_raw(), w, h)
+        .encode(quality)
+        .to_vec()
 }
 
 /// `only_approved`: export approved images only; otherwise every image that has a passing
 /// or flagged result (rejected and failed images are always skipped).
-pub fn export(store: &Store, project: &Project, dir: &Path, only_approved: bool) -> AppResult<ExportReport> {
+pub fn export(
+    store: &Store,
+    project: &Project,
+    dir: &Path,
+    only_approved: bool,
+) -> AppResult<ExportReport> {
     if project.export_sizes.is_empty() && project.webp_sizes.is_empty() {
         return Err(msg("Pick at least one export size."));
     }
@@ -81,7 +96,11 @@ pub fn export(store: &Store, project: &Project, dir: &Path, only_approved: bool)
         let stem = file_stem(project, &item);
         let multi = project.export_sizes.len() > 1;
         for &size in &project.export_sizes {
-            let target = if multi { dir.join(size.to_string()).join(format!("{stem}.png")) } else { dir.join(format!("{stem}.png")) };
+            let target = if multi {
+                dir.join(size.to_string()).join(format!("{stem}.png"))
+            } else {
+                dir.join(format!("{stem}.png"))
+            };
             write_atomic(&target, &encode_png(&square(&src, size))?)?;
         }
         for &size in &project.webp_sizes {
@@ -97,7 +116,11 @@ pub fn export(store: &Store, project: &Project, dir: &Path, only_approved: bool)
         &format!("Exported {written} images to {}", dir.display()),
         None,
     )?;
-    Ok(ExportReport { written, skipped, dir: dir.display().to_string() })
+    Ok(ExportReport {
+        written,
+        skipped,
+        dir: dir.display().to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -106,7 +129,11 @@ mod tests {
 
     #[test]
     fn square_pads_and_resizes() {
-        let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(200, 100, image::Rgba([255, 0, 0, 255])));
+        let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            200,
+            100,
+            image::Rgba([255, 0, 0, 255]),
+        ));
         let out = square(&img, 64);
         assert_eq!(out.dimensions(), (64, 64));
         assert_eq!(out.get_pixel(32, 2)[3], 0, "padding is transparent");

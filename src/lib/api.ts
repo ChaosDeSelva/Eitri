@@ -10,14 +10,20 @@ export type RunState =
   | { state: 'stopped'; reason: string }
 
 export interface KeyStatus { has_key: boolean; last4: string | null }
-export interface Price { text_in: number; image_in: number; output: number }
+export interface Caps { transparent: boolean; references: boolean; edit: boolean; quality: boolean }
+export interface ModelInfo { id: string; label: string; caps: Caps; estimate_usd: number }
+export interface ProviderInfo {
+  id: string; name: string; key_url: string; key_hint: string; needs_key: boolean
+  needs_base_url: boolean; planning: boolean; image_models: ModelInfo[]; text_models: string[]; note: string
+}
 export interface Settings {
+  default_provider: string
   default_image_model: string
+  default_text_provider: string
   default_text_model: string
   default_concurrency: number
   default_budget_usd: number
-  api_base: string
-  prices: Record<string, Price>
+  base_urls: Record<string, string>
 }
 export interface Project {
   id: string; name: string; idea: string; style_brief: string; shared_tail: string
@@ -25,6 +31,7 @@ export interface Project {
   background: string; gate: string; concurrency: number; budget_usd: number
   export_sizes: number[]; webp_sizes: number[]; filename_pattern: string
   use_references: boolean; spec_locked: boolean; created_at: number; updated_at: number
+  provider: string; text_provider: string
 }
 export interface ProjectStats {
   total: number; draft: number; queued: number; drawing: number; done: number; flagged: number
@@ -32,7 +39,9 @@ export interface ProjectStats {
 }
 export interface ProjectSummary extends Project { stats: ProjectStats; cover: string | null }
 export interface Reference { id: string; project_id: string; file: string; attempt_id: string | null; created_at: number }
-export interface ProjectDetail { project: Project; stats: ProjectStats; run: RunState; references: Reference[] }
+export interface ProjectDetail {
+  project: Project; stats: ProjectStats; run: RunState; references: Reference[]; caps: Caps; estimate_usd: number
+}
 export interface Item {
   id: string; project_id: string; ord: number; slug: string; title: string; subject: string
   prompt_sha: string | null; status: ItemStatus; priority: number; redo_note: string | null
@@ -54,16 +63,17 @@ export interface ActivityEvent {
   id: number; project_id: string | null; item_id: string | null; kind: string; message: string; ts: number
 }
 export interface SpendSummary { today_usd: number; total_usd: number }
-export interface ModelLists { image: string[]; text: string[] }
 export interface PlanRequest { idea: string; count: number; background: string; gate: string; size: string; notes: string }
 export interface ExportReport { written: number; skipped: number; dir: string }
 export type ProjectPatch = Partial<Omit<Project, 'id' | 'spec_locked' | 'created_at' | 'updated_at'>>
 
 export const api = {
-  keyStatus: () => invoke<KeyStatus>('key_status'),
-  keySave: (key: string) => invoke<KeyStatus>('key_save', { key }),
-  keyDelete: () => invoke<KeyStatus>('key_delete'),
-  models: () => invoke<ModelLists>('models'),
+  providerCatalog: () => invoke<ProviderInfo[]>('provider_catalog'),
+  keyStatuses: () => invoke<Record<string, KeyStatus>>('key_statuses'),
+  keySave: (provider: string, key: string) => invoke<KeyStatus>('key_save', { provider, key }),
+  keyDelete: (provider: string) => invoke<KeyStatus>('key_delete', { provider }),
+  openKeyPage: (provider: string) => invoke<void>('open_key_page', { provider }),
+  models: (provider: string) => invoke<string[]>('models', { provider }),
   settingsGet: () => invoke<Settings>('settings_get'),
   settingsSave: (settings: Settings) => invoke<Settings>('settings_save', { settings }),
   spend: () => invoke<SpendSummary>('spend'),
@@ -74,9 +84,12 @@ export const api = {
   projectGet: (id: string) => invoke<ProjectDetail>('project_get', { id }),
   projectUpdate: (id: string, patch: ProjectPatch) => invoke<Project>('project_update', { id, patch }),
   projectDelete: (id: string) => invoke<void>('project_delete', { id }),
+  projectDuplicate: (id: string) => invoke<Project>('project_duplicate', { id }),
 
   planDraft: (projectId: string, request: PlanRequest) => invoke<Project>('plan_draft', { projectId, request }),
   specLock: (projectId: string, locked: boolean) => invoke<Project>('spec_lock', { projectId, locked }),
+  specImport: (projectId: string, path: string) => invoke<number>('spec_import', { projectId, path }),
+  specExport: (projectId: string, path: string) => invoke<void>('spec_export', { projectId, path }),
 
   items: (projectId: string) => invoke<Item[]>('items', { projectId }),
   itemAdd: (projectId: string, title: string, subject: string) => invoke<Item>('item_add', { projectId, title, subject }),
@@ -97,6 +110,7 @@ export const api = {
   referenceRemove: (id: string) => invoke<void>('reference_remove', { id }),
 
   exportProject: (projectId: string, onlyApproved: boolean) => invoke<ExportReport>('export_project', { projectId, onlyApproved }),
+  reveal: (path: string) => invoke<void>('reveal', { path }),
   events: (projectId: string, limit = 300) => invoke<ActivityEvent[]>('events', { projectId, limit }),
 }
 
