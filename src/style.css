@@ -1,0 +1,180 @@
+@import 'tailwindcss';
+
+/* Light and dark palettes. Components only use the semantic tokens below. */
+:root {
+  --bg: #eeefe9;
+  --surface: #ffffff;
+  --surface-2: #f6f6f2;
+  --surface-3: #e9eae3;
+  --border: #d6d7cf;
+  --border-strong: #bfc0b7;
+  --fg: #151513;
+  --fg-muted: #5c5d57;
+  --fg-faint: #8c8d86;
+  --accent: #f54e00;
+  --accent-soft: #fde4d6;
+  --accent-fg: #ffffff;
+  --link: #1d4aff;
+  --ok: #2f9e44;
+  --ok-soft: #dcf2df;
+  --warn: #c27c00;
+  --warn-soft: #fbefd0;
+  --bad: #d4351c;
+  --bad-soft: #fadcd5;
+  --info: #2e6be6;
+  --info-soft: #dce7fc;
+  --checker-a: #f1f1ec;
+  --checker-b: #e3e4dd;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #17181d;
+    --surface: #1f2027;
+    --surface-2: #25262e;
+    --surface-3: #2c2e37;
+    --border: #353742;
+    --border-strong: #464957;
+    --fg: #ededea;
+    --fg-muted: #a7a8a2;
+    --fg-faint: #777872;
+    --accent: #ff6a24;
+    --accent-soft: #3a2418;
+    --link: #7c9bff;
+    --ok: #4cc265;
+    --ok-soft: #1c3322;
+    --warn: #e8a63a;
+    --warn-soft: #3a2f17;
+    --bad: #f0644b;
+    --bad-soft: #3d1f1a;
+    --info: #6f9dff;
+    --info-soft: #1b2a47;
+    --checker-a: #23242b;
+    --checker-b: #2b2c34;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #17181d;
+  --surface: #1f2027;
+  --surface-2: #25262e;
+  --surface-3: #2c2e37;
+  --border: #353742;
+  --border-strong: #464957;
+  --fg: #ededea;
+  --fg-muted: #a7a8a2;
+  --fg-faint: #777872;
+  --accent: #ff6a24;
+  --accent-soft: #3a2418;
+  --link: #7c9bff;
+  --ok: #4cc265;
+  --ok-soft: #1c3322;
+  --warn: #e8a63a;
+  --warn-soft: #3a2f17;
+  --bad: #f0644b;
+  --bad-soft: #3d1f1a;
+  --info: #6f9dff;
+  --info-soft: #1b2a47;
+  --checker-a: #23242b;
+  --checker-b: #2b2c34;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-faint: var(--fg-faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-link: var(--link);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+input,
+textarea,
+select,
+.selectable {
+  user-select: text;
+}
+
+/* Transparent art sits on a checkerboard so holes and halos are visible. */
+.checker {
+  background-color: var(--checker-a);
+  background-image:
+    linear-gradient(45deg, var(--checker-b) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--checker-b) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--checker-b) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--checker-b) 75%);
+  background-size: 14px 14px;
+  background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: var(--fg);
+  outline: none;
+  font: inherit;
+}
+.field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+textarea.field {
+  resize: vertical;
+}
+.label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 8px;
+  border: 2px solid var(--bg);
+}
