@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "Bring-your-own-key studio for planning, generating and reviewing batches of AI images"
 authors = ["Eitri contributors"]
 license = "MIT"
-repository = "https://github.com/YOUR-GITHUB-USER/eitri"
-homepage = "YOUR-SITE-URL"
+repository = "https://github.com/__OWNER__/eitri"
+homepage = "__SITE_URL__"
 edition = "2021"
 rust-version = "1.80"
 
