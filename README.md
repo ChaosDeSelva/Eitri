@@ -8,11 +8,42 @@
 
 <h3 align="center">Forge whole image sets from one idea.</h3>
 
-<p align="center"><a href="__SITE_URL__"><b>Website</b></a> · <a href="https://github.com/__OWNER__/eitri/releases"><b>Download</b></a> · <a href="docs/architecture.md"><b>Docs</b></a></p>
+<p align="center"><a href="https://chaosdeselva.github.io/Eitri/"><b>Website</b></a> · <a href="https://github.com/ChaosDeSelva/Eitri/releases"><b>Download</b></a> · <a href="docs/architecture.md"><b>Docs</b></a></p>
 
 <p align="center">
   <img alt="Eitri: forge whole image sets from one idea" src="assets/banner.png" width="100%" />
 </p>
+
+## Screenshots
+
+![Eitri Run screen showing Viking sprite sheets and per-image results](site/assets/screenshots/run-5.png)
+
+A real Viking sprite-sheet batch: seven generated images and one refused item, with status and spend visible.
+
+<details>
+<summary>See the planning and export workflow</summary>
+
+**Start with an idea** — Choose a base, describe the set, and configure the canvas before drafting.
+
+![Start with an idea](site/assets/screenshots/plan-1.png)
+
+**Approve the plan** — Review the shared style and individual prompts before approving the specification.
+
+![Approve the plan](site/assets/screenshots/plan-2.png)
+
+**Start the batch** — Track drawing and queued items while the approved plan stays locked.
+
+![Start the batch](site/assets/screenshots/plan-3.png)
+
+**See every outcome** — Completed, drawing, and refused items each retain their own status.
+
+![See every outcome](site/assets/screenshots/plan-4.png)
+
+**Choose your export** — Set the output folder, image sizes, formats, and file naming pattern.
+
+![Choose your export](site/assets/screenshots/export-6.png)
+
+</details>
 
 ## What it is
 
@@ -57,7 +88,7 @@ It runs on your machine with your own API keys. There is no server, no account a
 | **OpenAI-compatible** | anything behind `/images/generations` (local servers, gateways) | If supported | If supported | If supported | If supported |
 
 OpenAI is the provider Eitri is used with day to day. The others are implemented from each
-provider's public API documentation; if one misbehaves, please [open a provider report](https://github.com/__OWNER__/eitri/issues/new?template=provider.yml).
+provider's public API documentation; if one misbehaves, please [open a provider report](https://github.com/ChaosDeSelva/Eitri/issues/new?template=provider.yml).
 Details and model notes live in [docs/providers.md](docs/providers.md).
 
 ## Quick Start
@@ -69,10 +100,10 @@ Details and model notes live in [docs/providers.md](docs/providers.md).
 
 ### Install
 
-Download a build from [Releases](https://github.com/__OWNER__/eitri/releases), or build from source:
+Download a build from [Releases](https://github.com/ChaosDeSelva/Eitri/releases), or build from source:
 
 ```sh
-git clone https://github.com/__OWNER__/eitri
+git clone https://github.com/ChaosDeSelva/Eitri
 cd eitri
 pnpm install
 pnpm tauri build

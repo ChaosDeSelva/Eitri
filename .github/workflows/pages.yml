@@ -34,7 +34,7 @@ jobs:
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Refuse to publish unfilled repository links
         run: |
-          if grep -rn "__OWNER__\|__SITE_URL__" site; then
+          if grep -rn "__OWN[E]R__\|__SITE_UR[L]__" site; then
             echo "Run ./scripts/set-repo.sh owner/name before publishing." >&2
             exit 1
           fi

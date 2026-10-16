@@ -17,6 +17,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Linux system packages
         if: runner.os == 'Linux'
         run: |
@@ -40,11 +42,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
+      - name: Desktop release compilation
+        run: pnpm tauri build --no-bundle
 
       - name: Rust format
         if: runner.os == 'macOS'
         working-directory: src-tauri
         run: cargo fmt --check
+      - name: Rust lint
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test
@@ -53,9 +60,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Repository links are filled in
         run: |
-          if git grep -n "__OWNER__\|__SITE_URL__" -- . ':!scripts/set-repo.sh'; then
+          if git grep -n "__OWN[E]R__\|__SITE_UR[L]__" -- . ':!scripts/set-repo.sh'; then
             echo "Run ./scripts/set-repo.sh owner/name and commit the result." >&2
             exit 1
           fi

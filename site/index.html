@@ -7,7 +7,7 @@
   <meta name="description" content="Eitri is a free, open-source desktop app for planning, generating, checking and exporting whole sets of AI images with your own API key." />
   <meta property="og:title" content="Eitri · Forge whole image sets from one idea" />
   <meta property="og:description" content="Plan, preview, batch, check, redo and export consistent image sets. Bring your own key. No server, no telemetry." />
-  <meta property="og:image" content="assets/banner.png" />
+  <meta property="og:image" content="https://chaosdeselva.github.io/Eitri/assets/banner.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <link rel="icon" type="image/png" href="assets/favicon.png" />
   <style>
@@ -64,44 +64,15 @@
     .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
     .fine { margin-top: 14px; font-size: 13px; color: var(--faint); }
 
-    /* App mock */
-    .mock { margin: 48px auto 0; max-width: 1040px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--surface); box-shadow: 0 30px 60px -30px rgba(0,0,0,.35); text-align: left; }
-    .mock-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
-    .dots { display: flex; gap: 6px; }
-    .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); display: block; }
-    .mock-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 420px; }
-    .mock-side { border-right: 1px solid var(--line); background: var(--surface-2); padding: 14px 10px; font-size: 13px; }
-    .mock-side .row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; color: var(--muted); font-weight: 600; }
-    .mock-side .row.on { background: var(--surface-3); color: var(--fg); }
-    .mock-side .row b { margin-left: auto; font-weight: 600; color: var(--faint); font-size: 11px; }
-    .pip { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
-    .pip.run { background: var(--info); animation: pulse 1.4s infinite; }
-    .mock-main { padding: 16px 18px; min-width: 0; }
-    .mock-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .mock-head strong { font-size: 17px; letter-spacing: -0.01em; }
-    .pill { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--surface-3); color: var(--muted); }
-    .pill.info { background: var(--info-soft); color: var(--info); }
-    .pill.ok { background: var(--ok-soft); color: var(--ok); }
-    .pill.warn { background: var(--warn-soft); color: var(--warn); }
-    .pill.accent { background: var(--accent-soft); color: var(--accent); }
-    .bar { display: flex; height: 7px; border-radius: 999px; overflow: hidden; background: var(--surface-3); margin: 14px 0 6px; }
-    .bar span { display: block; height: 100%; }
-    .stats { display: flex; gap: 16px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
-    .stats b { color: var(--fg); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; margin-top: 16px; }
-    .tile { border: 1px solid var(--line); border-radius: 10px; padding: 5px; background: var(--surface); }
-    .art { aspect-ratio: 1; border-radius: 7px; position: relative; overflow: hidden;
-      background-color: var(--checker-a);
-      background-image: linear-gradient(45deg, var(--checker-b) 25%, transparent 25%), linear-gradient(-45deg, var(--checker-b) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--checker-b) 75%), linear-gradient(-45deg, transparent 75%, var(--checker-b) 75%);
-      background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
-    .art .shape { position: absolute; inset: 18% 22% 14%; border-radius: 40% 40% 18% 18%; }
-    .art .shape::before { content: ""; position: absolute; left: 30%; right: 30%; top: -26%; height: 36%; border-radius: 50%; background: inherit; filter: brightness(1.15); }
-    .art .spin { position: absolute; inset: 0; display: grid; place-items: center; }
-    .art .spin::after { content: ""; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--info); border-top-color: transparent; animation: spin 1s linear infinite; }
-    .tile .cap { display: flex; justify-content: space-between; align-items: center; padding: 6px 2px 1px; font-size: 11px; }
-    .tile .cap span:first-child { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes pulse { 50% { opacity: .35; } }
+    /* Actual app screenshots, linked to their original full-resolution PNGs. */
+    .screenshot { margin: 48px auto 0; max-width: 1040px; }
+    .screenshot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 16px; }
+    .screenshot figcaption { margin-top: 12px; color: var(--muted); font-size: 13px; text-align: center; }
+
+    .screenshot-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+    .screenshot-gallery .screenshot { margin: 0; min-width: 0; }
+    .screenshot a { display: block; border-radius: 16px; }
+    .screenshot a:focus-visible { outline: 3px solid var(--accent); outline-offset: 5px; }
 
     /* Sections */
     section.block { padding: 88px 0 0; }
@@ -149,8 +120,7 @@
 
     @media (max-width: 760px) {
       nav .links { display: none; }
-      .mock-body { grid-template-columns: 1fr; }
-      .mock-side { display: none; }
+      .screenshot-gallery { grid-template-columns: 1fr; }
       .split { grid-template-columns: 1fr; }
       .hero { padding-top: 48px; }
     }
@@ -167,7 +137,7 @@
         <a href="#privacy">Privacy</a>
         <a href="#install">Install</a>
       </div>
-      <a class="btn" href="https://github.com/__OWNER__/eitri" style="height:36px;font-size:14px">
+      <a class="btn" href="https://github.com/ChaosDeSelva/Eitri" style="height:36px;font-size:14px">
         <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
       </a>
@@ -183,49 +153,62 @@
         Describe the set, preview a few, then watch the rest fill in while you pause, review and redo with notes.
       </p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/__OWNER__/eitri/releases">
+        <a class="btn primary" href="https://github.com/ChaosDeSelva/Eitri/releases">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 19h14"/></svg>
           Download
         </a>
-        <a class="btn" href="https://github.com/__OWNER__/eitri">View the source</a>
+        <a class="btn" href="https://github.com/ChaosDeSelva/Eitri">View the source</a>
       </div>
       <p class="fine">macOS, Windows and Linux · MIT licensed · no account, no server, no telemetry</p>
 
-      <!-- An HTML rendering of the Run screen -->
-      <div class="mock" role="img" aria-label="The Eitri Run screen: a grid of images being drawn, with progress and spend">
-        <div class="mock-bar"><div class="dots"><i></i><i></i><i></i></div></div>
-        <div class="mock-body">
-          <aside class="mock-side">
-            <div class="row" style="font-weight:800;color:var(--fg);margin-bottom:8px"><img src="assets/icon.png" alt="" style="width:20px;height:20px;border-radius:5px" />Eitri</div>
-            <div class="row">Projects</div>
-            <div class="row">Base library</div>
-            <div class="row">Settings</div>
-            <div style="height:12px"></div>
-            <div class="row on"><span class="pip run"></span>Potion icons<b>31/48</b></div>
-            <div class="row"><span class="pip"></span>Hero portraits<b>120/120</b></div>
-            <div class="row"><span class="pip"></span>Guild crests<b>24/24</b></div>
-          </aside>
-          <div class="mock-main">
-            <div class="mock-head">
-              <strong>Potion icons</strong>
-              <span class="pill info"><span class="pip run" style="width:6px;height:6px"></span>Running</span>
-              <span class="pill accent">Spec approved</span>
-            </div>
-            <div class="bar">
-              <span style="width:20%;background:var(--accent)"></span>
-              <span style="width:41%;background:var(--ok)"></span>
-              <span style="width:4%;background:var(--warn)"></span>
-              <span style="width:6%;background:var(--info)"></span>
-            </div>
-            <div class="stats"><span>Done <b>31</b></span><span>Review <b>2</b></span><span>Left <b>15</b></span><span>Spent <b>$1.34</b> / $5.00</span></div>
-            <div class="grid" id="mock-grid"></div>
-          </div>
-        </div>
-      </div>
+      <figure class="screenshot">
+        <a href="assets/screenshots/run-5.png" aria-label="Open full-size screenshot: Viking sprite sheets in Eitri">
+          <img src="assets/screenshots/run-5.png" alt="Eitri — Viking sprite sheets in Eitri" width="2944" height="1984" fetchpriority="high" decoding="async" />
+        </a>
+        <figcaption><strong>Viking sprite sheets in Eitri.</strong> A real batch with seven generated sheets, one refused item, and per-image costs.</figcaption>
+      </figure>
     </div>
   </header>
 
   <main class="wrap">
+    <section class="block" id="screenshots" aria-labelledby="screenshots-title">
+      <div class="eyebrow">Inside the app</div>
+      <h2 id="screenshots-title">From a blank project to an image set.</h2>
+      <p class="sub">Follow a real Viking sprite-sheet project through planning, generation, and export setup. Select any screenshot to see it at full resolution.</p>
+      <div class="screenshot-gallery">
+<figure class="screenshot">
+        <a href="assets/screenshots/plan-1.png" aria-label="Open full-size screenshot: Start with an idea">
+          <img src="assets/screenshots/plan-1.png" alt="Eitri — Start with an idea" width="2944" height="1984" loading="lazy" decoding="async" />
+        </a>
+        <figcaption><strong>Start with an idea.</strong> Choose a base, describe the set, and configure the canvas before drafting.</figcaption>
+      </figure>
+<figure class="screenshot">
+        <a href="assets/screenshots/plan-2.png" aria-label="Open full-size screenshot: Approve the plan">
+          <img src="assets/screenshots/plan-2.png" alt="Eitri — Approve the plan" width="2944" height="1984" loading="lazy" decoding="async" />
+        </a>
+        <figcaption><strong>Approve the plan.</strong> Review the shared style and individual prompts before approving the specification.</figcaption>
+      </figure>
+<figure class="screenshot">
+        <a href="assets/screenshots/plan-3.png" aria-label="Open full-size screenshot: Start the batch">
+          <img src="assets/screenshots/plan-3.png" alt="Eitri — Start the batch" width="2944" height="1984" loading="lazy" decoding="async" />
+        </a>
+        <figcaption><strong>Start the batch.</strong> Track drawing and queued items while the approved plan stays locked.</figcaption>
+      </figure>
+<figure class="screenshot">
+        <a href="assets/screenshots/plan-4.png" aria-label="Open full-size screenshot: See every outcome">
+          <img src="assets/screenshots/plan-4.png" alt="Eitri — See every outcome" width="2944" height="1984" loading="lazy" decoding="async" />
+        </a>
+        <figcaption><strong>See every outcome.</strong> Completed, drawing, and refused items each retain their own status.</figcaption>
+      </figure>
+<figure class="screenshot">
+        <a href="assets/screenshots/export-6.png" aria-label="Open full-size screenshot: Choose your export">
+          <img src="assets/screenshots/export-6.png" alt="Eitri — Choose your export" width="2944" height="1984" loading="lazy" decoding="async" />
+        </a>
+        <figcaption><strong>Choose your export.</strong> Set the output folder, image sizes, formats, and file naming pattern.</figcaption>
+      </figure>
+      </div>
+    </section>
+
     <section class="block" id="features">
       <div class="eyebrow">Why Eitri</div>
       <h2>Everything around the image call, done for you.</h2>
@@ -315,9 +298,9 @@ No text, no letters, no logos, no watermarks.</pre>
     <section class="block" id="install">
       <div class="eyebrow">Install</div>
       <h2>Download, or build it yourself.</h2>
-      <p class="sub">Grab a build from the <a href="https://github.com/__OWNER__/eitri/releases">releases page</a>, or build from source with Rust, Node 22 and pnpm.</p>
+      <p class="sub">Grab a build from the <a href="https://github.com/ChaosDeSelva/Eitri/releases">releases page</a>, or build from source with Rust, Node 22 and pnpm.</p>
       <pre class="cmd"><span class="c"># build from source</span>
-git clone https://github.com/__OWNER__/eitri
+git clone https://github.com/ChaosDeSelva/Eitri
 cd eitri
 pnpm install
 pnpm tauri build   <span class="c"># app bundle in src-tauri/target/release/bundle</span></pre>
@@ -327,8 +310,8 @@ pnpm tauri build   <span class="c"># app bundle in src-tauri/target/release/bund
       <h2 style="margin-top:0">Make the whole set, not one image at a time.</h2>
       <p class="sub" style="margin:0 auto 24px">Free, open source, and yours to run.</p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/__OWNER__/eitri/releases">Download Eitri</a>
-        <a class="btn" href="https://github.com/__OWNER__/eitri">Star on GitHub</a>
+        <a class="btn primary" href="https://github.com/ChaosDeSelva/Eitri/releases">Download Eitri</a>
+        <a class="btn" href="https://github.com/ChaosDeSelva/Eitri">Star on GitHub</a>
       </div>
     </section>
   </main>
@@ -336,30 +319,12 @@ pnpm tauri build   <span class="c"># app bundle in src-tauri/target/release/bund
   <footer>
     <div class="wrap">
       <span>Eitri · MIT licensed</span>
-      <a href="https://github.com/__OWNER__/eitri">Source</a>
-      <a href="https://github.com/__OWNER__/eitri/tree/main/docs">Docs</a>
-      <a href="https://github.com/__OWNER__/eitri/issues">Issues</a>
-      <a href="https://github.com/__OWNER__/eitri/blob/main/SECURITY.md">Security</a>
+      <a href="https://github.com/ChaosDeSelva/Eitri">Source</a>
+      <a href="https://github.com/ChaosDeSelva/Eitri/tree/main/docs">Docs</a>
+      <a href="https://github.com/ChaosDeSelva/Eitri/issues">Issues</a>
+      <a href="https://github.com/ChaosDeSelva/Eitri/blob/main/SECURITY.md">Security</a>
     </div>
   </footer>
 
-  <script>
-    // Fills the Run screen mock with a believable mix of finished, drawing and queued images.
-    (function () {
-      var colours = ['#d94f3d', '#3f8f5a', '#3b6fd8', '#c78a1c', '#8a4fc7', '#2a9d9a', '#d06a2a', '#5e7f2f', '#b43f78', '#4458b8', '#a0522d', '#2f8f7a'];
-      var names = ['Healing', 'Mana', 'Stamina', 'Fire ward', 'Frost', 'Night eye', 'Swift', 'Iron skin', 'Charm', 'Sea breath', 'Ember', 'Verdant'];
-      var states = ['done', 'done', 'approved', 'done', 'drawing', 'done', 'flagged', 'approved', 'drawing', 'queued', 'queued', 'queued'];
-      var label = { done: ['ok', 'Done'], approved: ['accent', 'Approved'], drawing: ['info', 'Drawing'], flagged: ['warn', 'Review'], queued: ['', 'Queued'] };
-      var grid = document.getElementById('mock-grid');
-      for (var i = 0; i < 12; i++) {
-        var s = states[i];
-        var tile = document.createElement('div');
-        tile.className = 'tile';
-        var art = s === 'queued' ? '' : s === 'drawing' ? '<div class="spin"></div>' : '<div class="shape" style="background:' + colours[i] + '"></div>';
-        tile.innerHTML = '<div class="art">' + art + '</div><div class="cap"><span>' + names[i] + '</span><span class="pill ' + label[s][0] + '">' + label[s][1] + '</span></div>';
-        grid.appendChild(tile);
-      }
-    })();
-  </script>
 </body>
 </html>
