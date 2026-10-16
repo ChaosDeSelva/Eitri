@@ -2,6 +2,13 @@
   "name": "eitri",
   "private": true,
   "version": "0.1.0",
+  "description": "Plan, generate, check and export whole sets of AI images with your own API key.",
+  "license": "MIT",
+  "homepage": "YOUR-SITE-URL",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR-GITHUB-USER/eitri.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

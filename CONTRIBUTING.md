@@ -27,6 +27,12 @@ cargo test                                  # unit tests + runner tests against 
 
 CI runs the same commands on macOS, Windows and Linux.
 
+## Publishing the repository
+
+After creating the GitHub repository, run `./scripts/set-repo.sh owner/name` once. It fills in every
+link (README, website, issue templates, manifests). Then enable **Settings > Pages > Source: GitHub
+Actions** and the website in `site/` publishes on every push to `main`.
+
 ## Ground rules
 
 - **Never log, store or display an API key.** Keys go through `secrets.rs` only. Any string that

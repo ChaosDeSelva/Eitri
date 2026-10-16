@@ -8,6 +8,8 @@
 
 <h3 align="center">Forge whole image sets from one idea.</h3>
 
+<p align="center"><a href="YOUR-SITE-URL"><b>Website</b></a> · <a href="https://github.com/YOUR-GITHUB-USER/eitri/releases"><b>Download</b></a> · <a href="docs/architecture.md"><b>Docs</b></a></p>
+
 <p align="center">
   <img alt="Eitri: forge whole image sets from one idea" src="assets/banner.png" width="100%" />
 </p>
@@ -55,7 +57,7 @@ It runs on your machine with your own API keys. There is no server, no account a
 | **OpenAI-compatible** | anything behind `/images/generations` (local servers, gateways) | If supported | If supported | If supported | If supported |
 
 OpenAI is the provider Eitri is used with day to day. The others are implemented from each
-provider's public API documentation; if one misbehaves, please [open a provider report](.github/ISSUE_TEMPLATE/provider.yml).
+provider's public API documentation; if one misbehaves, please [open a provider report](https://github.com/YOUR-GITHUB-USER/eitri/issues/new?template=provider.yml).
 Details and model notes live in [docs/providers.md](docs/providers.md).
 
 ## Quick Start
@@ -67,10 +69,10 @@ Details and model notes live in [docs/providers.md](docs/providers.md).
 
 ### Install
 
-Download a build from Releases, or build from source:
+Download a build from [Releases](https://github.com/YOUR-GITHUB-USER/eitri/releases), or build from source:
 
 ```sh
-git clone <this repository>
+git clone https://github.com/YOUR-GITHUB-USER/eitri
 cd eitri
 pnpm install
 pnpm tauri build
