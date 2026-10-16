@@ -1,8 +1,9 @@
 //! Every call the UI can make. API keys go in through `key_save` and never come back out.
 
+use crate::bases::{self, Base, BasePatch, BaseRef};
 use crate::error::{msg, AppResult};
 use crate::export::{self, ExportReport};
-use crate::planner::{self, PlanRequest};
+use crate::planner::{self, BaseRequest, PlanRequest};
 use crate::pricing;
 use crate::providers::{self, Kind, Provider, ProviderInfo};
 use crate::runner::{base_url, RunState, Runner};
@@ -588,4 +589,137 @@ pub fn open_key_page(provider: String) -> AppResult<()> {
 #[tauri::command]
 pub fn events(state: S<'_>, project_id: String, limit: Option<i64>) -> AppResult<Vec<Event>> {
     state.store.events(&project_id, limit.unwrap_or(300))
+}
+
+// ---------- base library ----------
+
+#[tauri::command]
+pub fn bases_list(state: S<'_>) -> AppResult<Vec<Base>> {
+    state.store.bases()
+}
+
+#[tauri::command]
+pub fn base_get(state: S<'_>, id: String) -> AppResult<Base> {
+    state.store.base(&id)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NewBase {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub style_brief: String,
+    pub shared_tail: String,
+    pub size: String,
+    pub background: String,
+    pub gate: String,
+}
+
+#[tauri::command]
+pub fn base_create(state: S<'_>, base: NewBase) -> AppResult<Base> {
+    state.store.create_base(
+        &base.name,
+        &base.description,
+        &base.style_brief,
+        &base.shared_tail,
+        &base.size,
+        &base.background,
+        &base.gate,
+    )
+}
+
+#[tauri::command]
+pub fn base_update(state: S<'_>, id: String, patch: BasePatch) -> AppResult<Base> {
+    state.store.update_base(&id, patch)
+}
+
+#[tauri::command]
+pub fn base_delete(state: S<'_>, id: String) -> AppResult<()> {
+    state.store.delete_base(&id)
+}
+
+#[tauri::command]
+pub fn base_duplicate(state: S<'_>, id: String) -> AppResult<Base> {
+    state.store.duplicate_base(&id)
+}
+
+/// Writes a new base from a description of the look, streamed as `base-stream` events, and
+/// saves it to the library.
+#[tauri::command]
+pub async fn base_generate(
+    app: tauri::AppHandle,
+    state: S<'_>,
+    request: BaseRequest,
+) -> AppResult<Base> {
+    use tauri::Emitter;
+    let store = state.store.clone();
+    let s = settings(&store)?;
+    let planner_provider = provider(&store, &s.default_text_provider)?;
+    let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    let mut on_text = |text: &str| {
+        if last.elapsed() >= std::time::Duration::from_millis(120) {
+            last = std::time::Instant::now();
+            let _ = app.emit("base-stream", serde_json::json!({ "text": text }));
+        }
+    };
+    let (d, _usage) = planner::draft_base(
+        &planner_provider,
+        &s.default_text_model,
+        &request,
+        &mut on_text,
+    )
+    .await?;
+    store.create_base(
+        &d.name,
+        &d.description,
+        &d.style_brief,
+        &d.shared_tail,
+        &request.size,
+        &request.background,
+        &request.gate,
+    )
+}
+
+#[tauri::command]
+pub fn base_from_project(state: S<'_>, project_id: String, name: String) -> AppResult<Base> {
+    state.store.base_from_project(&project_id, &name)
+}
+
+#[tauri::command]
+pub fn base_apply(state: S<'_>, project_id: String, base_id: String) -> AppResult<Project> {
+    state.store.apply_base(&project_id, &base_id)
+}
+
+#[tauri::command]
+pub fn base_export(state: S<'_>, id: String, path: String) -> AppResult<()> {
+    let b = state.store.base(&id)?;
+    std::fs::write(&path, serde_json::to_string_pretty(&bases::to_file(&b))?)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn base_import(state: S<'_>, path: String) -> AppResult<Base> {
+    let f = bases::parse_file(&std::fs::read_to_string(&path)?)?;
+    state.store.create_base(
+        &f.name,
+        &f.description,
+        &f.style_brief,
+        &f.shared_tail,
+        &f.size,
+        &f.background,
+        &f.gate,
+    )
+}
+
+#[tauri::command]
+pub fn base_ref_add(state: S<'_>, base_id: String, path: String) -> AppResult<BaseRef> {
+    state
+        .store
+        .add_base_ref_file(&base_id, std::path::Path::new(&path))
+}
+
+#[tauri::command]
+pub fn base_ref_remove(state: S<'_>, id: String) -> AppResult<()> {
+    state.store.remove_base_ref(&id)
 }

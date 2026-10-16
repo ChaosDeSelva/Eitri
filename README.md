@@ -29,6 +29,7 @@ It runs on your machine with your own API keys. There is no server, no account a
 ## Features
 
 - **Idea to plan** - a planning model writes a style brief, a shared prompt every image ends with, and one specific description per image, streamed in as it is written. Edit anything before you spend a cent.
+- **Base library** - keep the generic half of your prompts (framing, style, canvas, background, negatives) as reusable bases. Start from built-in starters, generate a base from a description of the look, or save a project's tuned style. Apply one and the planner only writes the per-image subjects.
 - **Import your own list** - bring a CSV or JSON of prompts instead (any file with a `prompt`, `subject` or `description` column), or re-use a plan exported from another project.
 - **Preview, then lock** - draw a few, approve the style, then freeze the spec. Every image records a hash of the exact prompt it will send, so nothing drifts mid-run.
 - **One style across hundreds of images** - approved images become style references, rotated across the set so a big batch stays consistent without collapsing onto one look.
@@ -80,7 +81,7 @@ The app bundle lands in `src-tauri/target/release/bundle/`.
 ### First run
 
 1. Open **Settings**, pick a provider, paste your key. It is verified, then stored in your system keychain.
-2. Click **New project** and describe what you need, for example
+2. Optionally open **Base library** and pick a starter look, or generate one. Then click **New project** and describe what you need, for example
    `40 fantasy potion bottles for an inventory screen, chunky hand-painted style, transparent background`.
 3. Press **Draft plan** and watch it write. Edit anything.
 4. Select two images and press **Preview**. Approve the ones you like and mark them **Use as style reference**.
@@ -136,6 +137,7 @@ See [SECURITY.md](SECURITY.md) for the details and how to report a vulnerability
 | Doc | What it covers |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Modules, data model, run lifecycle, failure handling |
+| [docs/bases.md](docs/bases.md) | The base library: built-in starters, generating and applying bases, file format |
 | [docs/providers.md](docs/providers.md) | Every provider: endpoints, models, capabilities, known gaps |
 | [docs/checks.md](docs/checks.md) | The pixel checks and background keying, with their thresholds |
 | [docs/spec-format.md](docs/spec-format.md) | The JSON spec and CSV import formats |

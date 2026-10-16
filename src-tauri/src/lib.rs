@@ -1,3 +1,4 @@
+pub mod bases;
 pub mod commands;
 pub mod error;
 pub mod export;
@@ -124,6 +125,19 @@ pub fn run() {
             commands::reveal,
             commands::open_key_page,
             commands::events,
+            commands::bases_list,
+            commands::base_get,
+            commands::base_create,
+            commands::base_update,
+            commands::base_delete,
+            commands::base_duplicate,
+            commands::base_generate,
+            commands::base_from_project,
+            commands::base_apply,
+            commands::base_export,
+            commands::base_import,
+            commands::base_ref_add,
+            commands::base_ref_remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Eitri");

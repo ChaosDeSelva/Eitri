@@ -31,8 +31,17 @@ export interface Project {
   background: string; gate: string; concurrency: number; budget_usd: number
   export_sizes: number[]; webp_sizes: number[]; filename_pattern: string
   use_references: boolean; spec_locked: boolean; created_at: number; updated_at: number
-  provider: string; text_provider: string
+  provider: string; text_provider: string; base_id: string | null
 }
+export interface BaseRef { id: string; file: string }
+export interface Base {
+  id: string; name: string; description: string; style_brief: string; shared_tail: string
+  size: string; background: string; gate: string; builtin: boolean; created_at: number; updated_at: number
+  references: BaseRef[]
+}
+export type BasePatch = Partial<Pick<Base, 'name' | 'description' | 'style_brief' | 'shared_tail' | 'size' | 'background' | 'gate'>>
+export interface NewBase { name: string; description: string; style_brief: string; shared_tail: string; size: string; background: string; gate: string }
+export interface BaseRequest { look: string; size: string; background: string; gate: string }
 export interface ProjectStats {
   total: number; draft: number; queued: number; drawing: number; done: number; flagged: number
   failed: number; approved: number; rejected: number; spent_usd: number
@@ -63,7 +72,10 @@ export interface ActivityEvent {
   id: number; project_id: string | null; item_id: string | null; kind: string; message: string; ts: number
 }
 export interface SpendSummary { today_usd: number; total_usd: number }
-export interface PlanRequest { idea: string; count: number; background: string; gate: string; size: string; notes: string }
+export interface PlanRequest {
+  idea: string; count: number; background: string; gate: string; size: string; notes: string
+  keep_style?: { style_brief: string; shared_tail: string } | null
+}
 export interface ExportReport { written: number; skipped: number; dir: string }
 export type ProjectPatch = Partial<Omit<Project, 'id' | 'spec_locked' | 'created_at' | 'updated_at'>>
 
@@ -112,6 +124,20 @@ export const api = {
   exportProject: (projectId: string, onlyApproved: boolean) => invoke<ExportReport>('export_project', { projectId, onlyApproved }),
   reveal: (path: string) => invoke<void>('reveal', { path }),
   events: (projectId: string, limit = 300) => invoke<ActivityEvent[]>('events', { projectId, limit }),
+
+  bases: () => invoke<Base[]>('bases_list'),
+  base: (id: string) => invoke<Base>('base_get', { id }),
+  baseCreate: (base: NewBase) => invoke<Base>('base_create', { base }),
+  baseUpdate: (id: string, patch: BasePatch) => invoke<Base>('base_update', { id, patch }),
+  baseDelete: (id: string) => invoke<void>('base_delete', { id }),
+  baseDuplicate: (id: string) => invoke<Base>('base_duplicate', { id }),
+  baseGenerate: (request: BaseRequest) => invoke<Base>('base_generate', { request }),
+  baseFromProject: (projectId: string, name: string) => invoke<Base>('base_from_project', { projectId, name }),
+  baseApply: (projectId: string, baseId: string) => invoke<Project>('base_apply', { projectId, baseId }),
+  baseExport: (id: string, path: string) => invoke<void>('base_export', { id, path }),
+  baseImport: (path: string) => invoke<Base>('base_import', { path }),
+  baseRefAdd: (baseId: string, path: string) => invoke<BaseRef>('base_ref_add', { baseId, path }),
+  baseRefRemove: (id: string) => invoke<void>('base_ref_remove', { id }),
 }
 
 /** Local image path to a URL the webview can load (scoped to the app-data folder). */

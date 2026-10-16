@@ -34,6 +34,7 @@ const PATHS: Record<string, string> = {
   layers: 'M12 3 3 8l9 5 9-5ZM3 13l9 5 9-5',
   eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
   message: 'M4 5h16v11H9l-5 4Z',
+  book: 'M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 1-4-4ZM5 16a4 4 0 0 1 4-4h10',
 }
 </script>
 

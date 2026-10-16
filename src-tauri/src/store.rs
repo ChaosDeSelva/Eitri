@@ -2,6 +2,7 @@
 //! The `events` table is an append-only ledger: nothing ever rewrites or deletes it except
 //! deleting its whole project.
 
+use crate::bases::{Base, BasePatch, BaseRef};
 use crate::error::{msg, AppResult};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
@@ -124,6 +125,28 @@ CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ALTER TABLE projects ADD COLUMN provider TEXT NOT NULL DEFAULT 'openai';
 ALTER TABLE projects ADD COLUMN text_provider TEXT NOT NULL DEFAULT 'openai';
 "#,
+    r#"
+CREATE TABLE bases (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  style_brief TEXT NOT NULL DEFAULT '',
+  shared_tail TEXT NOT NULL,
+  size TEXT NOT NULL DEFAULT '1024x1024',
+  background TEXT NOT NULL DEFAULT 'transparent',
+  gate TEXT NOT NULL DEFAULT 'figure',
+  builtin INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE base_refs (
+  id TEXT PRIMARY KEY,
+  base_id TEXT NOT NULL REFERENCES bases(id) ON DELETE CASCADE,
+  file TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+ALTER TABLE projects ADD COLUMN base_id TEXT;
+"#,
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +176,8 @@ pub struct Project {
     pub provider: String,
     /// Provider used for planning.
     pub text_provider: String,
+    /// The library base this project was started from, if any. The project holds its own copy.
+    pub base_id: Option<String>,
 }
 
 /// Fields the UI may change. `None` leaves a field as it is.
@@ -335,7 +360,7 @@ fn item_from_row(r: &Row) -> rusqlite::Result<Item> {
 
 const PROJECT_COLS: &str = "id, name, idea, style_brief, shared_tail, output_dir, image_model, text_model, quality, size, \
   background, gate, concurrency, budget_usd, export_sizes, webp_sizes, filename_pattern, use_references, spec_locked, \
-  created_at, updated_at, provider, text_provider";
+  created_at, updated_at, provider, text_provider, base_id";
 
 fn project_from_row(r: &Row) -> rusqlite::Result<Project> {
     let sizes = |s: String| serde_json::from_str::<Vec<u32>>(&s).unwrap_or_default();
@@ -363,6 +388,7 @@ fn project_from_row(r: &Row) -> rusqlite::Result<Project> {
         updated_at: r.get(20)?,
         provider: r.get(21)?,
         text_provider: r.get(22)?,
+        base_id: r.get(23)?,
     })
 }
 
@@ -415,6 +441,26 @@ impl Store {
             "UPDATE items SET status = 'queued' WHERE status = 'drawing'",
             [],
         )?;
+        // Built-in bases are rewritten on every start so app updates can improve them.
+        let t = now_ms();
+        for b in crate::bases::builtins() {
+            conn.execute(
+                "INSERT INTO bases(id, name, description, style_brief, shared_tail, size, background, gate, builtin, created_at, updated_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?9) ON CONFLICT(id) DO UPDATE SET name=?2, description=?3, style_brief=?4, \
+                 shared_tail=?5, size=?6, background=?7, gate=?8, builtin=1",
+                params![
+                    b.id,
+                    b.name,
+                    crate::bases::clean(b.description),
+                    crate::bases::clean(b.style_brief),
+                    b.tail(),
+                    b.size,
+                    b.background,
+                    b.gate,
+                    t
+                ],
+            )?;
+        }
         Ok(Store {
             conn: Mutex::new(conn),
             data_dir,
@@ -1133,6 +1179,285 @@ impl Store {
     }
 }
 
+// ---------- bases ----------
+
+const BASE_COLS: &str =
+    "id, name, description, style_brief, shared_tail, size, background, gate, builtin, created_at, updated_at";
+
+fn base_from_row(r: &Row) -> rusqlite::Result<Base> {
+    Ok(Base {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        description: r.get(2)?,
+        style_brief: r.get(3)?,
+        shared_tail: r.get(4)?,
+        size: r.get(5)?,
+        background: r.get(6)?,
+        gate: r.get(7)?,
+        builtin: r.get::<_, i64>(8)? != 0,
+        created_at: r.get(9)?,
+        updated_at: r.get(10)?,
+        references: vec![],
+    })
+}
+
+impl Store {
+    pub fn bases(&self) -> AppResult<Vec<Base>> {
+        let list: Vec<Base> = {
+            let db = self.db();
+            let mut st = db.prepare(&format!(
+                "SELECT {BASE_COLS} FROM bases ORDER BY builtin DESC, updated_at DESC"
+            ))?;
+            let rows = st.query_map([], base_from_row)?;
+            rows.collect::<Result<_, _>>()?
+        };
+        list.into_iter()
+            .map(|mut b| {
+                b.references = self.base_refs(&b.id)?;
+                Ok(b)
+            })
+            .collect()
+    }
+
+    pub fn base(&self, id: &str) -> AppResult<Base> {
+        let mut b = self
+            .db()
+            .query_row(
+                &format!("SELECT {BASE_COLS} FROM bases WHERE id = ?"),
+                [id],
+                base_from_row,
+            )
+            .optional()?
+            .ok_or_else(|| msg("Base not found."))?;
+        b.references = self.base_refs(id)?;
+        Ok(b)
+    }
+
+    fn base_refs(&self, base_id: &str) -> AppResult<Vec<BaseRef>> {
+        let db = self.db();
+        let mut st =
+            db.prepare("SELECT id, file FROM base_refs WHERE base_id = ? ORDER BY created_at")?;
+        let rows = st.query_map([base_id], |r| {
+            Ok(BaseRef {
+                id: r.get(0)?,
+                file: r.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn base_dir(&self, base_id: &str) -> PathBuf {
+        self.data_dir.join("bases").join(base_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_base(
+        &self,
+        name: &str,
+        description: &str,
+        style_brief: &str,
+        shared_tail: &str,
+        size: &str,
+        background: &str,
+        gate: &str,
+    ) -> AppResult<Base> {
+        if shared_tail.trim().is_empty() {
+            return Err(msg("A base needs a shared prompt."));
+        }
+        let id = new_id();
+        let name = if name.trim().is_empty() {
+            "Untitled base"
+        } else {
+            name.trim()
+        };
+        self.db().execute(
+            &format!("INSERT INTO bases({BASE_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,?9,?9)"),
+            params![
+                id,
+                name,
+                description.trim(),
+                style_brief.trim(),
+                shared_tail.trim(),
+                size,
+                background,
+                gate,
+                now_ms()
+            ],
+        )?;
+        self.base(&id)
+    }
+
+    pub fn update_base(&self, id: &str, p: BasePatch) -> AppResult<Base> {
+        let cur = self.base(id)?;
+        if cur.builtin {
+            return Err(msg(
+                "Built-in bases are read-only. Duplicate it to make your own version.",
+            ));
+        }
+        let tail = p.shared_tail.unwrap_or(cur.shared_tail);
+        if tail.trim().is_empty() {
+            return Err(msg("A base needs a shared prompt."));
+        }
+        self.db().execute(
+            "UPDATE bases SET name=?2, description=?3, style_brief=?4, shared_tail=?5, size=?6, \
+             background=?7, gate=?8, updated_at=?9 WHERE id=?1",
+            params![
+                id,
+                p.name.unwrap_or(cur.name),
+                p.description.unwrap_or(cur.description),
+                p.style_brief.unwrap_or(cur.style_brief),
+                tail,
+                p.size.unwrap_or(cur.size),
+                p.background.unwrap_or(cur.background),
+                p.gate.unwrap_or(cur.gate),
+                now_ms()
+            ],
+        )?;
+        self.base(id)
+    }
+
+    pub fn delete_base(&self, id: &str) -> AppResult<()> {
+        if self.base(id)?.builtin {
+            return Err(msg("Built-in bases cannot be deleted."));
+        }
+        self.db().execute("DELETE FROM bases WHERE id = ?", [id])?;
+        let dir = self.base_dir(id);
+        if dir.exists() {
+            std::fs::remove_dir_all(dir)?;
+        }
+        Ok(())
+    }
+
+    /// Copies a base, including its reference images, into a new editable base.
+    pub fn duplicate_base(&self, id: &str) -> AppResult<Base> {
+        let src = self.base(id)?;
+        let name = if src.builtin {
+            format!("{} (mine)", src.name)
+        } else {
+            format!("{} copy", src.name)
+        };
+        let copy = self.create_base(
+            &name,
+            &src.description,
+            &src.style_brief,
+            &src.shared_tail,
+            &src.size,
+            &src.background,
+            &src.gate,
+        )?;
+        for r in &src.references {
+            self.add_base_ref_file(&copy.id, Path::new(&r.file))?;
+        }
+        self.base(&copy.id)
+    }
+
+    /// Copies an image into the base's folder and records it as a reference.
+    pub fn add_base_ref_file(&self, base_id: &str, src: &Path) -> AppResult<BaseRef> {
+        if self.base(base_id)?.builtin {
+            return Err(msg(
+                "Built-in bases are read-only. Duplicate it to add references.",
+            ));
+        }
+        let dir = self.base_dir(base_id);
+        std::fs::create_dir_all(&dir)?;
+        let dest = dir.join(format!("{}.png", new_id()));
+        image::open(src)?.save(&dest)?;
+        let id = new_id();
+        let file = dest.to_string_lossy().to_string();
+        self.db().execute(
+            "INSERT INTO base_refs(id, base_id, file, created_at) VALUES (?1,?2,?3,?4)",
+            params![id, base_id, file, now_ms()],
+        )?;
+        Ok(BaseRef { id, file })
+    }
+
+    pub fn remove_base_ref(&self, id: &str) -> AppResult<()> {
+        let file: Option<String> = self
+            .db()
+            .query_row("SELECT file FROM base_refs WHERE id = ?", [id], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        self.db()
+            .execute("DELETE FROM base_refs WHERE id = ?", [id])?;
+        if let Some(f) = file {
+            let _ = std::fs::remove_file(f);
+        }
+        Ok(())
+    }
+
+    /// Saves a project's current style (brief, shared prompt, canvas, references) as a new base.
+    pub fn base_from_project(&self, project_id: &str, name: &str) -> AppResult<Base> {
+        let p = self.project(project_id)?;
+        let name = if name.trim().is_empty() {
+            p.name.clone()
+        } else {
+            name.to_string()
+        };
+        let base = self.create_base(
+            &name,
+            &p.idea,
+            &p.style_brief,
+            &p.shared_tail,
+            &p.size,
+            &p.background,
+            &p.gate,
+        )?;
+        for r in self.references(project_id)? {
+            let _ = self.add_base_ref_file(&base.id, Path::new(&r.file));
+        }
+        self.event(
+            Some(project_id),
+            None,
+            "base",
+            &format!("Saved this style as the base {}", base.name),
+            None,
+        )?;
+        self.base(&base.id)
+    }
+
+    /// Copies a base into a project: style brief, shared prompt, canvas defaults and references.
+    /// The project keeps its own copy, so later edits to the base never change it.
+    pub fn apply_base(&self, project_id: &str, base_id: &str) -> AppResult<Project> {
+        let project = self.project(project_id)?;
+        if project.spec_locked {
+            return Err(msg("Unlock the spec before changing its base."));
+        }
+        let b = self.base(base_id)?;
+        self.update_project(
+            project_id,
+            ProjectPatch {
+                style_brief: Some(b.style_brief.clone()),
+                shared_tail: Some(b.shared_tail.clone()),
+                size: Some(b.size.clone()),
+                background: Some(b.background.clone()),
+                gate: Some(b.gate.clone()),
+                ..Default::default()
+            },
+        )?;
+        self.db().execute(
+            "UPDATE projects SET base_id = ?2 WHERE id = ?1",
+            params![project_id, base_id],
+        )?;
+        let refs_dir = self.project_dir(project_id).join("refs");
+        for r in &b.references {
+            std::fs::create_dir_all(&refs_dir)?;
+            let dest = refs_dir.join(format!("{}.png", new_id()));
+            if std::fs::copy(&r.file, &dest).is_ok() {
+                self.add_reference(project_id, &dest.to_string_lossy(), None)?;
+            }
+        }
+        self.event(
+            Some(project_id),
+            None,
+            "base",
+            &format!("Started from the base {}", b.name),
+            None,
+        )?;
+        self.project(project_id)
+    }
+}
+
 pub fn slugify(s: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
@@ -1288,6 +1613,57 @@ mod tests {
         let items = s.items(&c.id).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!((items[0].status.as_str(), items[0].attempts), ("draft", 0));
+    }
+
+    #[test]
+    fn builtin_bases_seed_and_are_read_only() {
+        let (s, _d) = store();
+        let all = s.bases().unwrap();
+        assert_eq!(all.iter().filter(|b| b.builtin).count(), 6);
+        let portrait = s.base("builtin-portrait-bust").unwrap();
+        assert!(s
+            .update_base(
+                &portrait.id,
+                BasePatch {
+                    name: Some("x".into()),
+                    ..Default::default()
+                }
+            )
+            .is_err());
+        assert!(s.delete_base(&portrait.id).is_err());
+        let mine = s.duplicate_base(&portrait.id).unwrap();
+        assert!(!mine.builtin);
+        assert_eq!(mine.shared_tail, portrait.shared_tail);
+        let renamed = s
+            .update_base(
+                &mine.id,
+                BasePatch {
+                    name: Some("Busts".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(renamed.name, "Busts");
+        s.delete_base(&mine.id).unwrap();
+    }
+
+    #[test]
+    fn apply_copies_and_save_round_trips() {
+        let (s, _d) = store();
+        let p = s
+            .create_project("Icons", "gpt-image-1", "gpt-4.1-mini", 3, 0.0)
+            .unwrap();
+        let applied = s.apply_base(&p.id, "builtin-character-full").unwrap();
+        let b = s.base("builtin-character-full").unwrap();
+        assert_eq!(applied.shared_tail, b.shared_tail);
+        assert_eq!(applied.size, "1024x1536");
+        assert_eq!(applied.base_id.as_deref(), Some("builtin-character-full"));
+        let saved = s.base_from_project(&p.id, "My heroes").unwrap();
+        assert_eq!(saved.name, "My heroes");
+        assert_eq!(saved.shared_tail, b.shared_tail);
+        assert!(!saved.builtin);
+        s.lock_spec(&p.id, true).unwrap();
+        assert!(s.apply_base(&p.id, "builtin-item-icon").is_err());
     }
 
     #[test]

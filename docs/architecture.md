@@ -17,6 +17,7 @@ and a Vue 3 interface that only talks to the backend through Tauri commands and 
 | `keying.rs` | Chroma backdrop removal for providers without native transparency. |
 | `export.rs` | Square PNG masters and WebP copies, written atomically. |
 | `spec.rs` | JSON spec and CSV import/export. |
+| `bases.rs` | The base library: built-in starters and the base file format. Bases are stored in the `bases` and `base_refs` tables and copied into projects. |
 | `pricing.rs` | Token prices for spend reporting. |
 | `secrets.rs` | OS keychain access, one entry per provider. |
 
@@ -28,6 +29,7 @@ and a Vue 3 interface that only talks to the backend through Tauri commands and 
 - **Attempt**: one API call for an item: kind (`generate`, `redo`, `edit`), model, exact prompt,
   file, cost, token usage, check report, error, duration. Attempts are never deleted.
 - **Reference**: a style reference image for a project.
+- **Base**: a reusable style (brief, shared prompt, canvas defaults, references) in the library. Applying one copies it into a project; the project records `base_id`.
 - **Event**: an append-only activity ledger entry. Messages pass through key redaction.
 
 Images live in `projects/<id>/images/` and `projects/<id>/refs/` under the app-data folder.

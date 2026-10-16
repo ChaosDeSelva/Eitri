@@ -9,7 +9,7 @@ import StatusPill from '@/components/StatusPill.vue'
 import UiButton from '@/components/UiButton.vue'
 import { useAppStore } from '@/stores/app'
 import { useProjectStore } from '@/stores/project'
-import { api, fileUrl, type Item } from '@/lib/api'
+import { api, fileUrl, type Base, type Item } from '@/lib/api'
 import { estimatePerImage, usd } from '@/lib/format'
 
 const app = useAppStore()
@@ -58,6 +58,42 @@ const stream = ref<PartialPlan | null>(null)
 let unlisten: UnlistenFn | undefined
 onBeforeUnmount(() => unlisten?.())
 
+// ---------- base library ----------
+const bases = ref<Base[]>([])
+const pickedBase = ref('')
+const keepStyle = ref(true)
+app.guard(() => api.bases()).then((b) => (bases.value = b ?? []))
+const currentBase = computed(() => bases.value.find((b) => b.id === ps.project?.base_id))
+const styleFromBase = computed(() => !!currentBase.value && meta.shared_tail.trim() === currentBase.value.shared_tail.trim())
+
+async function applyBase() {
+  const id = pickedBase.value
+  if (!id || !ps.id) return
+  if (meta.shared_tail.trim() && !window.confirm('Replace this project\'s style brief and shared prompt with the base?')) return
+  const p = await app.guard(() => api.baseApply(ps.id!, id))
+  if (p) {
+    meta.style_brief = p.style_brief
+    meta.shared_tail = p.shared_tail
+    form.size = p.size
+    form.background = p.background
+    form.gate = p.gate
+    keepStyle.value = true
+    pickedBase.value = ''
+    await ps.refresh()
+    app.notify('Base applied. The planner will keep this style and only write the images.')
+  }
+}
+
+async function saveAsBase() {
+  await saveMeta()
+  // Named after the project; rename it in the library.
+  const b = await app.guard(() => api.baseFromProject(ps.id!, ''))
+  if (b) {
+    bases.value = [b, ...bases.value]
+    app.notify(`Saved "${b.name}" to the base library. Rename or tweak it there.`)
+  }
+}
+
 async function draft() {
   if (!form.idea.trim()) return app.notify('Describe the idea first.', 'bad')
   if (ps.items.some((i) => i.attempts > 0) && !window.confirm('Re-plan? Images you have already drawn are kept; unstarted ones are replaced.')) return
@@ -67,7 +103,8 @@ async function draft() {
   unlisten = await listen<{ project_id: string; text: string }>('plan-stream', (e) => {
     if (e.payload.project_id === pid) stream.value = partialPlan(e.payload.text)
   })
-  const p = await app.guard(() => api.planDraft(ps.id!, { ...form, count: Number(form.count) || 1 }))
+  const keep = keepStyle.value && meta.shared_tail.trim() ? { style_brief: meta.style_brief, shared_tail: meta.shared_tail } : null
+  const p = await app.guard(() => api.planDraft(ps.id!, { ...form, count: Number(form.count) || 1, keep_style: keep }))
   unlisten?.()
   unlisten = undefined
   drafting.value = false
@@ -184,6 +221,31 @@ async function removeRef(id: string) {
   <div v-if="ps.project" class="flex h-full">
     <!-- Brief -->
     <aside class="w-[340px] shrink-0 overflow-y-auto border-r border-line bg-surface p-5">
+      <h2 class="mb-2 flex items-center gap-2 text-[13px] font-bold"><Icon name="book" /> Base</h2>
+      <div class="mb-6 space-y-2">
+        <div v-if="currentBase" class="flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1.5 text-[12px]">
+          <span class="text-muted">Started from</span>
+          <RouterLink :to="{ name: 'base', params: { baseId: currentBase.id } }" class="truncate font-semibold text-link">{{ currentBase.name }}</RouterLink>
+          <Pill v-if="!styleFromBase" tone="warn">edited</Pill>
+        </div>
+        <div class="flex gap-2">
+          <select v-model="pickedBase" class="field" :disabled="locked">
+            <option value="">{{ currentBase ? 'Switch to another base…' : 'Start from a base…' }}</option>
+            <optgroup v-if="bases.some((b) => !b.builtin)" label="Your bases">
+              <option v-for="b in bases.filter((x) => !x.builtin)" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </optgroup>
+            <optgroup label="Built-in starters">
+              <option v-for="b in bases.filter((x) => x.builtin)" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </optgroup>
+          </select>
+          <UiButton :disabled="!pickedBase || locked" @click="applyBase">Apply</UiButton>
+        </div>
+        <label v-if="meta.shared_tail.trim()" class="flex items-center gap-2 text-[12px] text-muted">
+          <input v-model="keepStyle" type="checkbox" :disabled="locked" />
+          Keep this style when drafting (only write the images)
+        </label>
+      </div>
+
       <h2 class="mb-3 flex items-center gap-2 text-[13px] font-bold"><Icon name="sparkles" class="text-accent" /> Idea</h2>
       <div class="space-y-3">
         <label class="block">
@@ -382,7 +444,10 @@ async function removeRef(id: string) {
           <textarea v-model="meta.style_brief" rows="5" class="field" :disabled="locked" @blur="saveMeta" />
         </label>
         <label class="block">
-          <span class="label">Shared prompt (appended to every image)</span>
+          <span class="label flex items-center justify-between">
+            Shared prompt (appended to every image)
+            <button type="button" class="font-semibold text-link" @click.prevent="saveAsBase">Save as base</button>
+          </span>
           <textarea v-model="meta.shared_tail" rows="5" class="field font-mono text-[12px]" :disabled="locked" @blur="saveMeta" />
         </label>
       </div>

@@ -55,6 +55,13 @@ function cycleTheme() {
           <Icon name="grid" /> Projects
         </RouterLink>
         <RouterLink
+          to="/library"
+          class="flex h-8 items-center gap-2 rounded-md px-2 font-semibold text-muted hover:bg-surface-3 hover:text-fg"
+          active-class="!bg-surface-3 !text-fg"
+        >
+          <Icon name="book" /> Base library
+        </RouterLink>
+        <RouterLink
           to="/settings"
           class="flex h-8 items-center gap-2 rounded-md px-2 font-semibold text-muted hover:bg-surface-3 hover:text-fg"
           active-class="!bg-surface-3 !text-fg"

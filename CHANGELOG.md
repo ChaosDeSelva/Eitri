@@ -4,6 +4,7 @@
 
 First public version.
 
+- Base library: reusable generic prompts with six built-in starters, generate a base from a description, save a project's style as a base, import and export. Applying a base makes the planner keep its style and write only the subjects.
 - Plan an image set from an idea: style brief, shared prompt and one subject per image, streamed live.
 - Import prompt lists from CSV or JSON, export and re-import specs.
 - Providers: OpenAI (verified), Google Gemini and Imagen, fal.ai, Replicate, Stability AI, and any OpenAI-compatible endpoint.
